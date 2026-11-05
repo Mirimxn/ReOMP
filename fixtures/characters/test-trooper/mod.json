@@ -1,0 +1,22 @@
+{
+  "name": "test-trooper",
+  "actions": [
+    {
+      "typeId": "v1/register-custom-vehicle-action",
+      "payload": {
+        "id": "Test_Trooper",
+        "tableName": "Characters",
+        "templateMatch": "clonetrooper_phase2_utapau",
+        "prefabResourcePath": "chars/minifig/clonetrooper/clonetrooper_phase2_utapau.prefab_baked",
+        "name": "OMP Test Trooper",
+        "description": "Test character added by ReOMP.",
+        "debugLog": true
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "v1"
+    }
+  ]
+}

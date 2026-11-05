@@ -28,7 +28,7 @@ An item is ready when its prerequisites are done. The prerequisites apply to the
 | INPUT | [Shared input service](mods/input.md) | HOOK | Verify action declarations, keyboard dispatch and the saved binding contract. | Pending |
 | UI | [In-game UI and input screen](mods/ui.md) | INPUT | Verify the shared render host, two mod panels and in-game rebinding. | Pending |
 | EDIT | [Desktop input editor and shared bindings](mods/input.md#acceptance) | INPUT, DEPLOY | Build the desktop editor. Verify shared bindings and concurrent edits once the in-game screen is available. | Pending |
-| CHAR | [Character registration](mods/character-registration.md) | GAME, ASSET | Verify a selectable custom character and the roster lookup. | Pending |
+| CHAR | [Character registration](mods/character-registration.md) | GAME, ASSET | Verify a selectable custom character and the roster lookup. | In progress |
 | VEH | [Vehicle registration](mods/vehicle-registration.md) | GAME, ASSET | Verify the migrated gunship fixture in its supported context and the vehicle lookup. | In progress |
 | SPAWN | [NPC spawning](mods/npc-spawning.md) | CHAR | Verify spawn and removal, failure cleanup and scene changes. | Pending |
 | ORDERS | [NPC orders](mods/npc-orders.md) | GAME | Verify navigation, follow and targeted combat with two consumers and conflict handling. | Pending |
@@ -52,6 +52,7 @@ Add an entry for each completed work session. Include the item ID, what changed,
 
 | Date | Item | Result and evidence | Remaining work |
 | --- | --- | --- | --- |
+| 2026-11-06 | CHAR | `v1/register-custom-vehicle-action` with `"tableName": "Characters"` adds `OMP_Test_Trooper` as its own roster character (fixture `fixtures/characters/test-trooper`). In game on Windows Steam: listed, unlocked, free and playable. Log confirms the Characters table layout and the icon sheet `ui/icons/characters/characters.tsh`. | Custom character icons (extend the vehicle icon atlas to the characters sheet). Then the provider steps that wait on GAME and ASSET. |
 | 2026-11-05 | VEH | Synced `mod-sources/v1` with the working vehicle module (preview routing through `LoadGraph`, `.res` sidecar hiding, `preview-bases.txt`, Characters-table overrides, extended logging). Documented the action in `mod-sources/v1/mod.md`. Recorded the gunship fixture in `fixtures/vehicles/` (step 1 of the plan). Added `tools/preview-scene-maker/`. In-game baseline from the inherited v1 build on Windows Steam: both gunships register, preview and spawn. | `build-v1` from this repository not yet run; rebuild and repeat the baseline. Steps 2–3 wait on GAME and ASSET. Epic not tested. |
 
 ## Completion
