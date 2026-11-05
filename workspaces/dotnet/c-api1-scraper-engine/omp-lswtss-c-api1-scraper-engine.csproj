@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\mod-sources\c-api1\c-api1-core\omp-lswtss-c-api1-core.csproj" />
+    <ProjectReference Include="..\c-api1-foundation\omp-lswtss-c-api1-foundation.csproj" />
+    <Reference Include="omp-lswtss-c-func-hook1">
+      <HintPath>..\..\..\dist\c-func-hook1\omp-lswtss-c-func-hook1.dll</HintPath>
+    </Reference>
+    <None Include="..\..\..\dist\c-func-hook1\omp-lswtss-c-func-hook1-native.dll" CopyToOutputDirectory="Always" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+</Project>

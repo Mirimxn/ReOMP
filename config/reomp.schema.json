@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReOMP global configuration",
+  "type": "object",
+  "required": ["installedMods"],
+  "properties": {
+    "installedMods": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to the folder that holds installed mod ZIPs."
+    }
+  }
+}

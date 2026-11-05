@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Reference Include="omp-lswtss-c-func-hook1">
+      <HintPath>..\..\..\dist\c-func-hook1\omp-lswtss-c-func-hook1.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <ProjectReference Include="..\c-api1-core\omp-lswtss-c-api1-core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+</Project>

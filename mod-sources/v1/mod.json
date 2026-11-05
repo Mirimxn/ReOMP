@@ -1,0 +1,52 @@
+{
+  "name": "V1",
+  "actions": [
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-v1",
+        "path": "omp-lswtss-v1.dll"
+      }
+    },
+    {
+      "typeId": "register-scripting-module-action",
+      "payload": {
+        "typeName": "OMP.LSWTSS.V1Manager",
+        "assemblyPath": "omp-lswtss-v1-manager.dll"
+      }
+    },
+    {
+      "typeId": "register-mod-action-type-action",
+      "payload": {
+        "id": "v1/register-custom-resource-action",
+        "executeModActionSharedAssemblyName": "omp-lswtss-v1",
+        "executeModActionStaticTypeName": "OMP.LSWTSS.V1+ModRegisterCustomResourceAction"
+      }
+    },
+    {
+      "typeId": "register-mod-action-type-action",
+      "payload": {
+        "id": "v1/register-custom-character-action",
+        "executeModActionSharedAssemblyName": "omp-lswtss-v1",
+        "executeModActionStaticTypeName": "OMP.LSWTSS.V1+ModRegisterCustomCharacterAction"
+      }
+    },
+    {
+      "typeId": "register-mod-action-type-action",
+      "payload": {
+        "id": "v1/register-custom-vehicle-action",
+        "executeModActionSharedAssemblyName": "omp-lswtss-v1",
+        "executeModActionStaticTypeName": "OMP.LSWTSS.V1+ModRegisterCustomVehicleAction"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "c-func-hook1"
+    },
+    {
+      "id": "c-api1"
+    }
+  ],
+  "description": "Registration and runtime APIs for resources, characters and vehicles."
+}

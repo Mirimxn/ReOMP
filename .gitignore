@@ -1,0 +1,11 @@
+/.vscode/*
+!/.vscode/extensions.json
+!/.vscode/launch.shared.json
+!/.vscode/settings.shared.json
+!/.vscode/tasks.shared.json
+/dist
+/.reomp-build/
+/cargo-home/
+/*.zip
+/workspaces/dev
+*.sln

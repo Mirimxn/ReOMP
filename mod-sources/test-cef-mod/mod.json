@@ -1,0 +1,30 @@
+{
+  "name": "Test Cef Mod",
+  "actions": [
+    {
+      "typeId": "register-scripting-module-action",
+      "payload": {
+        "typeName": "OMP.LSWTSS.TestCefMod",
+        "assemblyPath": "test-cef-mod.dll"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "c-func-hook1"
+    },
+    {
+      "id": "c-api1"
+    },
+    {
+      "id": "input-hook1"
+    },
+    {
+      "id": "overlay1"
+    },
+    {
+      "id": "v1"
+    }
+  ],
+  "description": "Development example for game hooks, entities and a CEF overlay."
+}

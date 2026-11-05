@@ -1,0 +1,5 @@
+/bin
+/obj
+/src/SteamSchema.json
+/src/EGSSchema.json
+/src/Generated

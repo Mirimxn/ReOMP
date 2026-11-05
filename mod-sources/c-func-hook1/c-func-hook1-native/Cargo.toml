@@ -1,0 +1,10 @@
+[package]
+name = "omp-lswtss-c-func-hook1-native"
+version = "1.0.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+detour = { version = "^0.8.0", default_features = false }

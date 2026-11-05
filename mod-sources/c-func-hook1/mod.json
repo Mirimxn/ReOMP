@@ -1,0 +1,14 @@
+{
+  "name": "CFuncHook1",
+  "actions": [
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-c-func-hook1",
+        "path": "omp-lswtss-c-func-hook1.dll"
+      }
+    }
+  ],
+  "description": "Native function hooks for OMP mods.",
+  "dependencies": []
+}

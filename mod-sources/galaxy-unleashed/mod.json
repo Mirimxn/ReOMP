@@ -1,0 +1,30 @@
+{
+  "name": "Galaxy Unleashed",
+  "actions": [
+    {
+      "typeId": "register-scripting-module-action",
+      "payload": {
+        "typeName": "OMP.LSWTSS.GalaxyUnleashed",
+        "assemblyPath": "omp-lswtss-galaxy-unleashed-runtime.dll"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "c-func-hook1"
+    },
+    {
+      "id": "c-api1"
+    },
+    {
+      "id": "input-hook1"
+    },
+    {
+      "id": "overlay1"
+    },
+    {
+      "id": "v1"
+    }
+  ],
+  "description": "Galaxy Unleashed gameplay tools and in-game overlay."
+}

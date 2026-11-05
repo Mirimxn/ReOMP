@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "preLaunchTask": "build-dev-tools",
+      "name": "Run Game",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/workspaces/dotnet/dev-tools/bin/Debug/net8.0/omp-lswtss-dev-tools.dll",
+      "args": [
+        "run-game",
+        "${input:gameDirPath}",
+      ],
+      "stopAtEntry": false,
+      "logging": {
+        "moduleLoad": false,
+      },
+      "console": "internalConsole"
+    },
+  ]
+}

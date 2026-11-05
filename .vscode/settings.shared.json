@@ -1,0 +1,42 @@
+{
+  "[javascript]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+    "editor.tabSize": 2,
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+    "editor.tabSize": 2,
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "dbaeumer.vscode-eslint",
+    "editor.tabSize": 2,
+  },
+  "eslint.format.enable": true,
+  "files.exclude": {
+    "mod-sources/c-api1/c-api1-main": true,
+  },
+  "files.watcherExclude": {
+    "**/dist": true,
+    "**/target": true,
+    "**/node_modules": true,
+    "mod-sources/c-api1/c-api1-main": true,
+    "workspaces/dotnet/**/bin": true,
+    "workspaces/dotnet/**/obj": true
+  },
+  "search.exclude": {
+    "**/dist": true,
+    "**/target": true,
+    "**/node_modules": true,
+    "mod-sources/c-api1/c-api1-main": true,
+    "workspaces/dotnet/**/bin": true,
+    "workspaces/dotnet/**/obj": true
+  },
+  "[csharp]": {
+    "editor.detectIndentation": false,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true
+  },
+  "rust-analyzer.linkedProjects": [
+    "workspaces/rust/Cargo.toml"
+  ]
+}

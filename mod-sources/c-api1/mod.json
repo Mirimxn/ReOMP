@@ -1,0 +1,32 @@
+{
+  "name": "CApi1",
+  "actions": [
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-c-api1-core",
+        "path": "omp-lswtss-c-api1-core.dll"
+      }
+    },
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-c-api1-main",
+        "path": "omp-lswtss-c-api1-main.dll"
+      }
+    },
+    {
+      "typeId": "register-scripting-module-action",
+      "payload": {
+        "typeName": "OMP.LSWTSS.CApi1.Manager",
+        "assemblyPath": "omp-lswtss-c-api1-manager.dll"
+      }
+    }
+  ],
+  "description": "Game bindings and APIs for other OMP mods.",
+  "dependencies": [
+    {
+      "id": "c-func-hook1"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "name": "Overlay1",
+  "actions": [
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-overlay1",
+        "path": "omp-lswtss-overlay1.dll"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "c-func-hook1"
+    },
+    {
+      "id": "input-hook1"
+    }
+  ],
+  "description": "Chromium-based overlays rendered in the game."
+}

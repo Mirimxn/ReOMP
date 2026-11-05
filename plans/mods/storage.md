@@ -1,0 +1,14 @@
+# Persistent storage
+
+Provide SQLite-backed persistence that ordinary OMP mods can opt into. Store data outside the installed ZIPs and deployed mod directories so updates and target toggles preserve it.
+
+## Implementation sequence
+
+1. Prove an installed OMP scripting module can open, write and reopen a SQLite database using only files supplied by its package. Evaluate `Microsoft.Data.Sqlite` with its bundled native SQLite provider. Verify resolution through OMP's [assembly load context](../../workspaces/dotnet/runtime-engine/src/ScriptingModuleAssemblyLoadContext.cs), including which assembly owns native library loading. The game is a Windows process on both Windows and Proton. Package the Windows x64 SQLite native dependency for that process. [Microsoft SQLite packaging](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/custom-versions)
+2. Follow the game's save boundaries. Expose a profile store for the active storefront account and a separate store for the currently loaded save slot. Resolve the identity from the active game's save flow, using the `GTSaveGameSystem` entries in the Steam and Epic binding schemas as the starting point. Verify with disposable profiles that the selected storefront, account and slot match the game's own save destination. If the active identity is unavailable, return an unavailable result for that scope. Steam and Epic use separate namespaces, and on Proton the Windows game's per-user data stays inside its prefix. [Steam save example](https://steamcommunity.com/app/920210/discussions/0/4665175132473285698/) · [Epic save-path report](https://www.reddit.com/r/SteamDeck/comments/105jis5/unable_to_download_heroic_launcher_cloud_saves/)
+3. Store databases under ReOMP's own per-user game-side data directory, partitioned by storefront, account, profile or slot, and mod ID. Keep the game's files and cloud-save directories separate. Expose key/value reads and transactional writes of JSON values. Keep file paths and database connections private to the provider. Run blocking database work off the game thread. Invalidate the old store handle on a profile or slot switch so pending work cannot write to a different save.
+4. Prove schema migration and interruption recovery. A failed migration must leave the previous data readable. Verify backup and restore using SQLite's database APIs if the database may be open while it is copied. [SQLite Online Backup API](https://www.sqlite.org/backup.html)
+
+## Acceptance
+
+Two fixture mods store values independently. Two save slots under one account have separate slot data and share the mod's profile data. Verify storefront isolation, an unavailable identity, and a slot switch with a pending write. Data survives restart, package replacement and target toggling. Simulate an interrupted write and a failed migration. Verify that a clean Windows game deployment loads the bundled native library. Proton validation follows with Linux users.

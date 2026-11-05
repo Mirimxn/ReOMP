@@ -1,0 +1,24 @@
+{
+  "name": "Debug Tools",
+  "actions": [
+    {
+      "typeId": "register-scripting-module-action",
+      "payload": {
+        "typeName": "OMP.LSWTSS.DebugTools",
+        "assemblyPath": "omp-lswtss-debug-tools.dll"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "c-func-hook1"
+    },
+    {
+      "id": "c-api1"
+    },
+    {
+      "id": "input-hook1"
+    }
+  ],
+  "description": "Developer tools for reloading scripting modules."
+}

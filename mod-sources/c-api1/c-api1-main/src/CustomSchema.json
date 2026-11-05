@@ -1,0 +1,1011 @@
+{
+  "Classes": [
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "Vec3",
+      "NativeDataSize": 16,
+      "Fields": [
+        {
+          "Name": "X",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Y",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Z",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "W",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "Vec4",
+      "NativeDataSize": 16,
+      "Fields": [
+        {
+          "Name": "X",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Y",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Z",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "W",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NUVEC",
+      "NativeDataSize": 12,
+      "Fields": [
+        {
+          "Name": "X",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Y",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Z",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NuVec2",
+      "NativeDataSize": 8,
+      "Fields": [
+        {
+          "Name": "X",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Y",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NuVec3",
+      "NativeDataSize": 16,
+      "Fields": [
+        {
+          "Name": "X",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Y",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Z",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "W",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NuVec4",
+      "NativeDataSize": 16,
+      "Fields": [
+        {
+          "Name": "X",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Y",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "Z",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "W",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "Mtx",
+      "NativeDataSize": 64,
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NuGuid",
+      "NativeDataSize": 16,
+      "Fields": [
+        {
+          "Name": "V1",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V2",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V3",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V4",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V5",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V6",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V7",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V8",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V9",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V10",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V11",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V12",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V13",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V14",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V15",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "V16",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "Colour3",
+      "NativeDataSize": 12,
+      "Fields": [
+        {
+          "Name": "R",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "G",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "B",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "Colour4",
+      "NativeDataSize": 16,
+      "Fields": [
+        {
+          "Name": "R",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "G",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "B",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "A",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "float",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "Colour32",
+      "NativeDataSize": 4,
+      "Fields": [
+        {
+          "Name": "R",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "G",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "B",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        },
+        {
+          "Name": "A",
+          "Type": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          }
+        }
+      ],
+      "Methods": []
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.VirtualClassSchema, omp-lswtss-c-api1-foundation",
+      "Namespace": "NttFile",
+      "Name": "FileDevicePC",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 54532368,
+          "NativeEGSRuntimeOffset": 54537968,
+          "Name": "Constructor",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+            "ClassFullName": "NttFile.FileDevicePC",
+            "IsClassNativeHandle": true
+          },
+          "Args": [
+            {
+              "Name": "nameNativeDataPtr",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassVirtualMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeVtableIndex": 24,
+          "Name": "CreateFile",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "nint",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg2",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "int",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassVirtualMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeVtableIndex": 31,
+          "Name": "FileGetPosition",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.VirtualClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NuFileDeviceDat",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 54486816,
+          "NativeEGSRuntimeOffset": 54492416,
+          "Name": "Constructor",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+            "ClassFullName": "NuFileDeviceDat",
+            "IsClassNativeHandle": true
+          },
+          "Args": [],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassVirtualMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeVtableIndex": 24,
+          "Name": "CreateFile",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "nint",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg2",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "int",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassVirtualMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeVtableIndex": 31,
+          "Name": "FileGetPosition",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "byte",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "OpponentInfo",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 39358496,
+          "NativeEGSRuntimeOffset": 39357392,
+          "Name": "ChangeFaction",
+          "Args": [
+            {
+              "Name": "factionName",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "string",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "CharacterModelAssistant",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 4217312,
+          "NativeEGSRuntimeOffset": 12348352,
+          "Name": "RequestApplyResourceWithPath",
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "nint",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "resourceType",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "int",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "resourcePath",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "string",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg2",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg3",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "bool",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg4",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "modelPart",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "string",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NttSceneGraphResourceHandle",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 48029280,
+          "NativeEGSRuntimeOffset": 48028160,
+          "Name": "Constructor",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+            "ClassFullName": "NttSceneGraphResourceHandle",
+            "IsClassNativeHandle": true
+          },
+          "Args": [
+            {
+              "Name": "resourceType",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "int",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "ApiWorldProcessingScope",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 48545872,
+          "NativeEGSRuntimeOffset": 48544752,
+          "Name": "Constructor",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+            "ClassFullName": "ApiWorldProcessingScope",
+            "IsClassNativeHandle": true
+          },
+          "Args": [
+            {
+              "Name": "apiWorld",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+                "ClassFullName": "ApiWorld",
+                "IsClassNativeHandle": true
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "bool",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 48546064,
+          "NativeEGSRuntimeOffset": 48544944,
+          "Name": "Destructor",
+          "IsStatic": false,
+          "Args": [],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NttUniverseProcessingScope",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 48542704,
+          "NativeEGSRuntimeOffset": 48541584,
+          "Name": "Constructor",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+            "ClassFullName": "NttUniverseProcessingScope",
+            "IsClassNativeHandle": true
+          },
+          "Args": [
+            {
+              "Name": "nttUniverse",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+                "ClassFullName": "NttUniverse",
+                "IsClassNativeHandle": true
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "bool",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 48542976,
+          "NativeEGSRuntimeOffset": 48541856,
+          "Name": "Destructor",
+          "IsStatic": false,
+          "Args": [],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Namespace": "Collectables",
+      "Name": "Table",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 22514736,
+          "NativeEGSRuntimeOffset": 22513632,
+          "Name": "Constructor",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.ClassTypeSchema, omp-lswtss-c-api1-foundation",
+            "ClassFullName": "Collectables.Table",
+            "IsClassNativeHandle": true
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg2",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        },
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 22528128,
+          "NativeEGSRuntimeOffset": 22527024,
+          "Name": "AddEntry2",
+          "IsStatic": false,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "nint",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg2",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    },
+    {
+      "$type": "OMP.LSWTSS.CApi1.RawClassSchema, omp-lswtss-c-api1-foundation",
+      "Name": "NuStringTable",
+      "NativeDataSize": 0,
+      "Methods": [
+        {
+          "$type": "OMP.LSWTSS.CApi1.ClassRawMethodSchema, omp-lswtss-c-api1-foundation",
+          "NativeSteamRuntimeOffset": 807392,
+          "NativeEGSRuntimeOffset": 807344,
+          "Name": "GetByName",
+          "IsStatic": true,
+          "ReturnType": {
+            "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+            "PrimitiveFullName": "string",
+            "IsPrimitiveNativeDataPtr": false
+          },
+          "Args": [
+            {
+              "Name": "arg0",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "string",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            },
+            {
+              "Name": "arg1",
+              "Type": {
+                "$type": "OMP.LSWTSS.CApi1.PrimitiveTypeSchema, omp-lswtss-c-api1-foundation",
+                "PrimitiveFullName": "nint",
+                "IsPrimitiveNativeDataPtr": false
+              }
+            }
+          ],
+          "IsNativeReturnValueByParamOptimizationEnabled": false
+        }
+      ]
+    }
+  ]
+}

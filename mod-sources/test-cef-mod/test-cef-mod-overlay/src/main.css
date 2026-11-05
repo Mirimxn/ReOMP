@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  .font-outline-2 {
+    -webkit-text-stroke: 1px rgba(0, 0, 0, 0.8);
+  }
+  .font-outline-4 {
+    -webkit-text-stroke: 4px black;
+  }
+}
+
+@font-face {
+  font-family: 'lego';
+  src: url('./assets/lego.ttf') format('truetype');
+  font-smooth: always;
+}
+
+@font-face {
+  font-family: 'lego-outlined';
+  src: url('./assets/lego-outlined.ttf') format('truetype');
+  font-smooth: always;
+}
+
+@font-face {
+  font-family: 'star-jedi';
+  src: url('./assets/star-jedi.ttf') format('truetype');
+  font-smooth: always;
+}
+
+@font-face {
+  font-family: 'distant-galaxy';
+  src: url('./assets/distant-galaxy.ttf') format('truetype');
+  font-smooth: always;
+}
+
+body {
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #FFFFFF;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #EEEEEE;
+}

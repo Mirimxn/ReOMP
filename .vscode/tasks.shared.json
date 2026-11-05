@@ -1,0 +1,514 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build-dev-tools",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "build",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "build-c-func-hook1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-c-func-hook1",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-c-func-hook1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-c-func-hook1",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/c-func-hook1/c-func-hook1/**/*.cs"
+      }
+    },
+    {
+      "label": "build-c-api1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-c-api1",
+        "${input:steamGameDirPath}",
+        "${input:egsGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-c-api1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-c-api1",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "workspaces/dotnet/c-api1*/**/*.cs"
+      }
+    },
+    {
+      "label": "build-input-hook1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-input-hook1",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-input-hook1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-input-hook1",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/input-hook1/input-hook1/**/*.cs"
+      }
+    },
+    {
+      "label": "build-overlay1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-overlay1",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-overlay1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-overlay1",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/overlay1/overlay1/**/*.cs"
+      }
+    },
+    {
+      "label": "build-debug-tools",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-debug-tools",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-debug-tools",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-debug-tools",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/debug-tools/debug-tools/**/*.cs"
+      }
+    },
+    {
+      "label": "build-v1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-v1",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-v1",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-v1",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/v1/**/*.cs"
+      }
+    },
+    {
+      "label": "build-test-cef-mod",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-test-cef-mod",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-test-cef-mod",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-test-cef-mod",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "update-test-cef-mod",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "update-test-cef-mod",
+        "${input:devGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/test-cef-mod/test-cef-mod/**/*.cs"
+      }
+    },
+    {
+      "label": "build-galaxy-unleashed",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-galaxy-unleashed",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev-galaxy-unleashed",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "dev-galaxy-unleashed",
+        "${input:devGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "dev-update-galaxy-unleashed",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "dev-update-galaxy-unleashed",
+        "${input:devGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "mod-sources/galaxy-unleashed/galaxy-unleashed-runtime/**/*.cs"
+      }
+    },
+    {
+      "label": "build-bundle",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-bundle",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-bundle",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-bundle",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": "workspaces/dotnet/runtime-engine/**/*.cs"
+      }
+    },
+    {
+      "label": "build-all",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "build-all",
+        "${input:steamGameDirPath}",
+        "${input:egsGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "install-all",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "install-all",
+        "${input:gameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-steam-game",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "run-steam-game",
+        "${input:steamGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "run-egs-game",
+      "type": "shell",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--",
+        "run-egs-game",
+        "${input:egsGameDirPath}",
+      ],
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/workspaces/dotnet/dev-tools"
+      },
+      "problemMatcher": []
+    },
+  ],
+  "inputs": [
+    {
+      "id": "gameDirPath",
+      "description": "gameDirPath",
+      "type": "promptString",
+    }
+  ]
+}
