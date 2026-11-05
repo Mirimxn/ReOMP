@@ -9,7 +9,7 @@ namespace OMP.LSWTSS;
 
 public static partial class V1
 {
-    // Reads/writes the game's vehicle icon sheet:
+    // Reads/writes the game's icon sheets (vehicles 256 px cells, characters 128 px cells), e.g.:
     //   UI/ICONS/VEHICLES/VEHICLES.TSH          sprite index (name -> rectangle)
     //   UI/ICONS/VEHICLES/VEHICLES_DX11.TEXTURE one DXT5 (BC3) image, 1 mip, 256x256 cells
     // Rectangles are stored as pixel x/y/w/h (y = memory row) plus UVs (v flipped).
@@ -17,7 +17,8 @@ public static partial class V1
     // of cells at the end of the image, so existing icons keep their pixel positions.
     static class VehicleIconAtlas
     {
-        public const int Cell = 256;
+        // Cell size of the sheet being built (256 for vehicles, 128 for characters).
+        [ThreadStatic] public static int Cell;
 
         public sealed class Sprite
         {
@@ -123,7 +124,7 @@ public static partial class V1
                 var mips = ReadU32(data, rtxt + 20);
                 var format = ReadU32(data, rtxt + 28);
                 if (format != 6 || mips != 1) throw new InvalidDataException($"TEXTURE: expected DXT5 with 1 mip, got format {format}, mips {mips}");
-                if (Width % Cell != 0 || Height % Cell != 0) throw new InvalidDataException("TEXTURE: size is not a multiple of 256");
+                if (Width % Cell != 0 || Height % Cell != 0) throw new InvalidDataException($"TEXTURE: size {Width}x{Height} is not a multiple of {Cell}");
 
                 _heightOffset = rtxt + 12;
                 var pixelsOffset = data.Length - Width * Height; // DXT5 = 1 byte per pixel
@@ -140,7 +141,7 @@ public static partial class V1
                 Height += pixelRows;
             }
 
-            // rgba: 256x256, top-down. Placed at memory rows y..y+255 (same orientation as existing icons).
+            // rgba: Cell x Cell, top-down. Placed at memory rows y..y+255 (same orientation as existing icons).
             public void WriteCell(int x, int y, byte[] rgba)
             {
                 var blocksPerRow = Width / 4;
@@ -172,10 +173,11 @@ public static partial class V1
 
         public sealed record Placement(string Name, uint X, uint Y, bool New);
 
-        // icons: sprite name -> 256x256 RGBA. Returns new TSH + TEXTURE bytes.
+        // icons: sprite name -> cell x cell RGBA. Returns new TSH + TEXTURE bytes.
         public static (byte[] Tsh, byte[] Texture, List<Placement> Placements, int AddedRows) Build(
-            byte[] baseTsh, byte[] baseTexture, IReadOnlyList<(string Name, byte[] Rgba)> icons)
+            byte[] baseTsh, byte[] baseTexture, IReadOnlyList<(string Name, byte[] Rgba)> icons, int cell)
         {
+            Cell = cell;
             var index = new SpriteIndex(baseTsh);
             var sheet = new Sheet(baseTexture);
             var originalHeight = sheet.Height;

@@ -34,7 +34,7 @@ public static partial class V1
             if (!string.IsNullOrEmpty(payload.Icon))
             {
                 var iconPath = System.IO.Path.GetFullPath(System.IO.Path.Combine(modDirPath, payload.Icon));
-                RegisterCustomVehicleIcon(payload.Id, iconPath);
+                RegisterCustomVehicleIcon(payload.TableName, payload.Id, iconPath);
                 overrides.TryAdd("IconFileName", GetCustomVehicleIconSpriteName(payload.Id));
             }
 

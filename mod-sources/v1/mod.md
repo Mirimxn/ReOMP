@@ -30,7 +30,7 @@ Managed mods can also reference the shared `omp-lswtss-v1` assembly for APIs suc
 | `templateMatch` | yes | Exact roster entry name, or text contained in its prefab path. Use a playable entry; hidden rows such as `Republic_Gunship` make the copy hidden. |
 | `prefabResourcePath` | yes | Prefab the row spawns. |
 | `name`, `description` | no | Text served through `OMP_VEHICLE_<ID>` string keys. |
-| `icon` | no | PNG in the mod folder, fitted into a 256x256 cell of the merged icon sheet. |
+| `icon` | no | PNG in the mod folder, fitted into a cell of the roster's icon sheet (256 px for vehicles, 128 px for characters). |
 | `previewScene` | no | Cheap scene (`.scene_baked`) in the mod folder for the roster preview. Without it the template's preview shows. |
 | `previewBase` | no | Roster entry whose preview slot serves `previewScene`. Defaults to the template. Must have a `.scene_baked` cheap graph. |
 | `previewKeepHeader` | no | Serve the scene unchanged instead of patching its header to the base slot. |
@@ -48,7 +48,7 @@ The roster draws previews through `UIRenderTargetModelLoader::LoadGraph`, and on
 
 ### Icons
 
-Vehicle icons are one sheet, `ui/icons/vehicles/vehicles.tsh` with `vehicles_dx11.texture` (DXT5, 3584x3584, 256 px cells). The module reads the original pair from `omp-data/vehicle-icons/`, places each `OMP_<id>` icon in a free cell, adds rows when full, caches the result in `generated/` and redirects the game to it.
+Each roster has one icon sheet: vehicles use `ui/icons/vehicles/vehicles.tsh` with `vehicles_dx11.texture` (256 px cells), characters use `ui/icons/characters/characters.tsh` with `characters_dx11.texture` (128 px cells, 3712x3712, all 841 cells taken). The module reads the original pair from `omp-data/vehicle-icons/` or `omp-data/character-icons/`. If a pair is missing there but an untouched extracted copy is in the game's `UI/ICONS/<roster>` folder, it saves that copy there first. Each `OMP_<id>` icon goes into an empty cell; when none are left the sheet grows by whole rows at the bottom, so no existing icon is moved or covered. The result is cached in `generated/` and the game is redirected to it.
 
 ### Asset rules
 

@@ -10,7 +10,8 @@
         "prefabResourcePath": "chars/minifig/clonetrooper/clonetrooper_phase2_utapau.prefab_baked",
         "name": "OMP Test Trooper",
         "description": "Test character added by ReOMP.",
-        "debugLog": true
+        "debugLog": true,
+        "icon": "icon.png"
       }
     }
   ],

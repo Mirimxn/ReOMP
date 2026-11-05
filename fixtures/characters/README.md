@@ -2,7 +2,7 @@
 
 `test-trooper` adds `OMP_Test_Trooper` ("OMP Test Trooper") to the `Characters` table as a copy of `CloneTrooper_Phase2_Utapau`, using the game's own prefab, so it needs no packaged files.
 
-Verified on Windows Steam (6 Nov 2026): the entry appears in the character roster as its own character next to the original, unlocked and free, and is playable. It still uses the template's icon.
+Verified on Windows Steam (6 Nov 2026): the entry appears in the character roster as its own character next to the original, unlocked and free, and is playable. Icon support for characters was added afterwards (fixture now sets `icon`); in-game check pending.
 
 ## Characters table
 
