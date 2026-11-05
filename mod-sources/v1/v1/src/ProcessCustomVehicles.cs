@@ -11,7 +11,7 @@ public static partial class V1
 {
     static readonly string _vehicleLogPath = Path.Combine(Environment.CurrentDirectory, "omp-custom-vehicles.log");
 
-
+    
     static bool _vehicleDebugLog = false;
 
     static void VehicleDebug(string message)
@@ -335,22 +335,21 @@ public static partial class V1
 
         try
         {
-            uint displayCol = uint.MaxValue;
-            for (uint c = 0; c < (uint)_columnKinds.Length; c++)
+            int displayCol = FindColumn(table, "DisplayStringID"), iconCol = FindColumn(table, "IconFileName"), cheapCol = FindColumn(table, "Cheap Graph");
+            if (displayCol >= 0)
             {
-                string? n = null;
-                try { n = table.GetColumnName((int)c); } catch { }
-                if (n == "DisplayStringID") { displayCol = c; break; }
-            }
-            if (displayCol != uint.MaxValue)
-            {
-                VehicleDebug("All vehicles (entry / name key):");
+                VehicleDebug($"All '{tableName}' entries (entry / name key / icon / preview):");
                 for (uint r = 0; r < rowCount; r++)
                 {
-                    var p = GetValuePtr(table.Values[r], displayCol);
-                    var key = p == nint.Zero ? "" : ((Collectables.StringVal.NativeHandle)p).Val ?? "";
+                    string Str(int col)
+                    {
+                        if (col < 0) return "";
+                        var p = GetValuePtr(table.Values[r], (uint)col);
+                        if (p == nint.Zero) return "";
+                        return KindOf((uint)col) == ValueKind.Graph ? ((Collectables.GraphVal.NativeHandle)p).Val2.ResourcePath1 ?? "" : ((Collectables.StringVal.NativeHandle)p).Val ?? "";
+                    }
                     // (No text lookup here: the string tables may not be loaded yet.)
-                    VehicleDebug($"  {r}: {EntryLabel(table, r)} / {key}");
+                    VehicleDebug($"  {r}: {EntryLabel(table, r)} / {Str(displayCol)} / {Str(iconCol)} / {Str(cheapCol)}");
                 }
             }
         }
@@ -465,5 +464,8 @@ public static partial class V1
 
         try { AssignCustomVehiclePreviews(table, tableName); }
         catch (Exception e) { VehicleLog($"Vehicle previews: FAILED: {e}"); }
+
+        try { WritePreviewBaseList(table); }
+        catch (Exception e) { VehicleLog($"Vehicle previews: could not write the preview base list: {e.Message}"); }
     }
 }

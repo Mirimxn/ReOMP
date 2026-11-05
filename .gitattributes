@@ -2,3 +2,10 @@
 *.dll binary
 *.dat binary
 *.pak binary
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.scene_baked binary
+*.SCENE_BAKED binary
+*.ghg binary
+*.GHG binary
+*.png binary

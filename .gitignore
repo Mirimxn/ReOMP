@@ -9,3 +9,7 @@
 /*.zip
 /workspaces/dev
 *.sln
+# Game-derived files are never committed
+/tools/preview-scene-maker/*.SCENE_BAKED
+/fixtures/**/CHARS/
+/fixtures/**/*.png

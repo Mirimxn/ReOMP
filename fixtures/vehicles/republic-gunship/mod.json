@@ -1,0 +1,25 @@
+{
+  "name": "republic-gunship",
+  "actions": [
+    {
+      "typeId": "v1/register-custom-vehicle-action",
+      "payload": {
+        "id": "Republic_Gunship",
+        "tableName": "Vehicles",
+        "templateMatch": "Wookie_Gunship",
+        "prefabResourcePath": "chars/vehicles/republic_gunship/republic_gunship.prefab_baked",
+        "name": "LAAT/i",
+        "description": "LAAT/i gunship.",
+        "unlocked": true,
+        "icon": "icon.png",
+        "previewScene": "CHARS/VEHICLES/REPUBLIC_GUNSHIP/PREVIEW/LAATI_PREVIEW_FLAT.SCENE_BAKED",
+        "previewBase": "Micro_Acclamator"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "v1"
+    }
+  ]
+}

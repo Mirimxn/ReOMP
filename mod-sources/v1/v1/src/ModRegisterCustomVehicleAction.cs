@@ -38,6 +38,15 @@ public static partial class V1
                 overrides.TryAdd("IconFileName", GetCustomVehicleIconSpriteName(payload.Id));
             }
 
+            // Characters: make the entry its own roster slot (not an outfit of the template's character).
+            // Same columns OMP's register-custom-character-action sets: 7 Base, 8 CurrentlySelectedOutfit, 10 BaseNameId.
+            if (string.Equals(payload.TableName, "Characters", StringComparison.OrdinalIgnoreCase))
+            {
+                overrides.TryAdd("7", $"OMP_{payload.Id}");
+                overrides.TryAdd("8", "true");
+                if (overrides.TryGetValue("DisplayStringID", out var nameKey)) overrides.TryAdd("10", nameKey);
+            }
+
             if (payload.Unlocked)
             {
                 overrides.TryAdd("Collect State", payload.UnlockedCollectState.ToString());

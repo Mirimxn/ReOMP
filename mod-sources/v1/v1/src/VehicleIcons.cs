@@ -42,7 +42,8 @@ public static partial class V1
     static void EnsureVehicleIconSheet(string requestedPath)
     {
         if (_vehicleDebugLog &&
-            (requestedPath.Contains("icons/vehicles", StringComparison.OrdinalIgnoreCase) ||
+            (requestedPath.Contains("ui/icons", StringComparison.OrdinalIgnoreCase) ||
+             requestedPath.Contains("chars/minifig", StringComparison.OrdinalIgnoreCase) ||
              requestedPath.Contains("chars/vehicles", StringComparison.OrdinalIgnoreCase)))
         {
             var served = FetchIsDiskResourceRegistered(GetResourceCanonPath(requestedPath));

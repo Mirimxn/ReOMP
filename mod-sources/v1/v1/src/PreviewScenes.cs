@@ -73,6 +73,50 @@ public static partial class V1
         }
     }
 
+    // Writes omp-data\vehicle-previews\preview-bases.txt: every roster entry whose preview can be borrowed
+    // with "previewBase" (its preview is a .scene_baked), and which custom vehicles already use one.
+    static void WritePreviewBaseList(Collectables.Table.NativeHandle table)
+    {
+        int cheapCol = FindColumn(table, "Cheap Graph"), playableCol = FindColumn(table, "IsPlayable"), classCol = FindColumn(table, "VehicleClass");
+        if (cheapCol < 0) return;
+        var used = _customVehiclesInfo.Where(v => !string.IsNullOrEmpty(v.PreviewBase))
+            .GroupBy(v => v.PreviewBase!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(v => v.Id)), StringComparer.OrdinalIgnoreCase);
+        string[] classNames = ["Regular", "Capital", "Micro"];
+
+        var lines = new List<(string Group, string Line)>();
+        for (uint r = 0; r < (uint)table.Values.Length; r++)
+        {
+            var entry = EntryLabel(table, r);
+            if (entry.StartsWith("OMP_", StringComparison.OrdinalIgnoreCase)) continue;
+            var row = table.Values[r];
+            var g = GetValuePtr(row, (uint)cheapCol);
+            if (g == nint.Zero) continue;
+            var path = ((Collectables.GraphVal.NativeHandle)g).Val2.ResourcePath1 ?? "";
+            if (!path.EndsWith(".scene_baked", StringComparison.OrdinalIgnoreCase)) continue;
+            var playable = playableCol >= 0 && GetValuePtr(row, (uint)playableCol) is var pp && pp != nint.Zero && ((Collectables.BoolVal.NativeHandle)pp).Val;
+            var cls = classCol >= 0 && GetValuePtr(row, (uint)classCol) is var cp && cp != nint.Zero ? ((Collectables.EnumVal.NativeHandle)cp).Val.Index : -1;
+            var clsName = cls >= 0 && cls < classNames.Length ? classNames[cls] : "?";
+            var note = used.TryGetValue(entry, out var who) ? $"  <- used by {who}" : "";
+            lines.Add((clsName, $"  {entry,-40} {(playable ? "" : "(not in roster) ")}{path}{note}"));
+        }
+
+        var outDir = Path.Combine(Environment.CurrentDirectory, "omp-data", "vehicle-previews");
+        Directory.CreateDirectory(outDir);
+        var sb = new StringBuilder();
+        sb.AppendLine("Roster entries whose preview slot can be used as \"previewBase\" (written by OMP Custom Vehicles at startup).");
+        sb.AppendLine("Use a different one for every custom vehicle. Switching straight between a custom vehicle and its base");
+        sb.AppendLine("can keep showing the first one, so vehicles you rarely look at (microfighters) make good bases.");
+        foreach (var grp in lines.GroupBy(l => l.Group).OrderBy(g => g.Key == "Micro" ? 0 : g.Key == "Regular" ? 1 : 2))
+        {
+            sb.AppendLine();
+            sb.AppendLine($"{grp.Key} ({grp.Count()}):");
+            foreach (var l in grp.OrderBy(l => l.Line, StringComparer.OrdinalIgnoreCase)) sb.AppendLine(l.Line);
+        }
+        File.WriteAllText(Path.Combine(outDir, "preview-bases.txt"), sb.ToString());
+        VehicleLog($"Vehicle previews: wrote the list of {lines.Count} usable preview bases to omp-data\\vehicle-previews\\preview-bases.txt");
+    }
+
     static int FindColumn(Collectables.Table.NativeHandle table, string name)
     {
         for (int c = 0; c < _columnKinds.Length; c++)
