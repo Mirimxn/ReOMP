@@ -153,6 +153,9 @@ public static partial class V1
         return value;
     }
 
+    static bool IsCharactersTable(CustomVehicleInfo info) =>
+        string.Equals(info.TableName, "Characters", StringComparison.OrdinalIgnoreCase);
+
     // Keep the new prefab path in the same style as the template's path
     // (".prefab" vs ".prefab_baked"), since the table may store either.
     static string MatchPathStyle(string path, string templatePath)
@@ -189,7 +192,17 @@ public static partial class V1
                 d.ResourcePath1 = path1;
                 d.ResourcePath2 = path2;
                 if (path1 == s.ResourcePath1) d.ResourceGuid1NativeData = s.ResourceGuid1NativeData;
+                // Characters only for now: the vehicle mods already work with an empty id, and their
+                // prefabs may still carry the id of the vanilla prefab they were copied from.
+                else if (IsCharactersTable(info) && TryReadModResourceId(path1, out var id1, out var file1))
+                {
+                    // A replaced path (e.g. the new prefab) gets the id of the mod file, so the game
+                    // never mistakes the new entry for the template it was copied from
+                    d.ResourceGuid1NativeData = id1;
+                    VehicleLog($"    graph '{path1}': resource id {GuidHex(id1)} (from {Path.GetFileName(file1)})");
+                }
                 if (path2 == s.ResourcePath2) d.ResourceGuid2NativeData = s.ResourceGuid2NativeData;
+                else if (IsCharactersTable(info) && TryReadModResourceId(path2, out var id2, out _)) d.ResourceGuid2NativeData = id2;
                 d.ReferenceType1 = s.ReferenceType1;
                 d.ReferenceType2 = s.ReferenceType2;
                 break;
