@@ -34,9 +34,26 @@ public static partial class V1
         var info = _customResourcesInfo.LastOrDefault(r => GetResourceCanonPath(r.Path) == canon);
         if (info == null || !File.Exists(info.SrcPath)) return false;
 
-        var head = new byte[2048];
+        // The source path sits at the end of the header chunk, which can be tens of KB long
+        // (character prefabs list hundreds of dependencies), so read the whole header chunk.
+        byte[] head;
         int read;
-        using (var f = File.OpenRead(info.SrcPath)) read = f.Read(head, 0, head.Length);
+        using (var f = File.OpenRead(info.SrcPath))
+        {
+            var sizeBytes = new byte[4];
+            if (f.Read(sizeBytes, 0, 4) < 4) return false;
+            var headerSize = (sizeBytes[0] << 24) | (sizeBytes[1] << 16) | (sizeBytes[2] << 8) | sizeBytes[3];
+            var length = (int)Math.Min(f.Length, Math.Clamp((long)headerSize + 4, 2048, 4 * 1024 * 1024));
+            head = new byte[length];
+            f.Position = 0;
+            read = 0;
+            while (read < length)
+            {
+                var n = f.Read(head, read, length - read);
+                if (n <= 0) break;
+                read += n;
+            }
+        }
         if (read < 40 || !head.AsSpan(4, 12).SequenceEqual(".CC4HSERHSER"u8)) return false;
 
         var sourcePath = canon.EndsWith("_baked") ? canon[..^"_baked".Length] : canon;

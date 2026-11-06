@@ -62,6 +62,7 @@ public static partial class V1
         if (_vehicleDebugLog &&
             (requestedPath.Contains("ui/icons", StringComparison.OrdinalIgnoreCase) ||
              requestedPath.Contains("chars/minifig", StringComparison.OrdinalIgnoreCase) ||
+             requestedPath.Contains("chars/super_character", StringComparison.OrdinalIgnoreCase) ||
              requestedPath.Contains("chars/vehicles", StringComparison.OrdinalIgnoreCase)))
         {
             var served = FetchIsDiskResourceRegistered(GetResourceCanonPath(requestedPath));
