@@ -26,3 +26,21 @@ Every value is a record: `u32 size (incl. itself) | u32 name length | name\0 | p
 - Attachments, each a sub-prefab plus model and textures: `hat`, `facetex`, `additionalmodel`, `skinnedskirt` (capes), `torso_attachment`. Hat models carry a part name (`HAT_CloneTrooper`, `Hat_CloneTrooperEpisodeIII`, ...).
 - Class: `templatecharacters/classtemplates/<class>.prefab` (`bountyhunter`, `resistancerebelsoldier`, ...). Abilities: `minifig/<name>/abilities/<name>_abilities.prefab`. Character data: `minifig/<name>/character/<name>_character.prefab`.
 - Items and weapons: `items/*.prefab`, `weapons/*`, `item_graphs/templates/*`, with item models (`blasterrifle_dx11.gsc`, ...).
+
+## Decoding progress (6 Nov 2026)
+
+Reader: `tools/character-maker-prototype/reader/` (`schema.py` parses `TypeList` and `ClassList`; `decode.py` walks objects).
+
+- **Types** (26 in CaribDiss): `Char`, `Short`, `Int`, `Int64`, `Float`, `String`, `Colour3`, `NuHSpecial`, `Vec3`, `Vec4`, `Mtx`, `Ptr`, `ClassObject`, `ClassObjectRef`, `Half`, `Data`, (unnamed 16), `HalfVec3`, `UChar`, `Colour4`, (unnamed 20), `NuTransform` (48), `NuGuid` (16), 23 (resource reference), `NuQuat`, `Colour32`.
+- **Class** record: name string, `Version` (float), `Types` = `u8 0`, `u32 count`, then per field `u32 type, string name, i32 offset, i32 a, u32 flags, i32 b, i32 c`.
+  - Base class: flags `0xC0000000`, offset 0, `type` = class index of the base. Its fields come first.
+  - `c == 0`: list (u32 count, then items).
+  - Flags `0x9xxxxxxx`: runtime-only, not stored (`Parent Transform`, `Target Transform`, `GameFlags`).
+  - Type number >= 26: embedded instance of class `type` (e.g. `Model Resource` -> `nttResourceStrongAutoLoadHandleT<NuScene>`). Some of these use their own layout (resource handles store `u32 len + path`).
+- **Object** (`MOBJ` record): `u32 prefix` (`00000000`; entities `0000feff`, root `0000ffff`), then the class fields.
+  - `apiComponent`: `Enabled` (u8), `Guid` (16), `ManagedByAsset` (u8), `Locked` (u8).
+  - `apiEntity`: + `Name` (string), `Mobility` (u32), `Platform` (u16), `NameSearch` (u8), `Components` (list of `u8 present, u32 class index, MOBJ`).
+  - `RootNode` holds the root entity's fields from `Mobility` on, with 92 components in CaribDiss.
+- **Resource reference** (type 23): `u32 ref type, u8 has id, [16-byte id], u32 len, path\0`.
+- **Attachment entities** seen in CaribDiss: `SkinnedSkirt_Fabric` (10 components), `AdditionalModel_CaribDiss` (6), `FaceTex_CaribDiss` (4).
+- Attachments find their place at load time through `AttachToLocatorComponent.Locator` (a joint name); the transform links are runtime-only. Open question: the trailing u32 table (636 entries in CaribDiss) may hold the transform parent indices.
