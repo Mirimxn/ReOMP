@@ -44,3 +44,20 @@ Reader: `tools/character-maker-prototype/reader/` (`schema.py` parses `TypeList`
 - **Resource reference** (type 23): `u32 ref type, u8 has id, [16-byte id], u32 len, path\0`.
 - **Attachment entities** seen in CaribDiss: `SkinnedSkirt_Fabric` (10 components), `AdditionalModel_CaribDiss` (6), `FaceTex_CaribDiss` (4).
 - Attachments find their place at load time through `AttachToLocatorComponent.Locator` (a joint name); the transform links are runtime-only. Open question: the trailing u32 table (636 entries in CaribDiss) may hold the transform parent indices.
+
+## Counters and the link table (6 Nov 2026)
+
+- The two u32 values right before the `TypeList` record are **the total object count** (root included: CaribDiss 2446, CLONETROOPER 2392, the Airborne Trooper copy 2481) and **the link table length** (636, 597, 636).
+- The u32 table after `OLST` is the **link table**: each slot is an object number (pre-order position of the `MOBJ` in the tree, root = 0) or -1. Max value 2425 in CaribDiss, 2446 objects.
+- Link fields are the fields flagged `0x8...` or `0x9...` (not the base-class marker). Their `type` is the **class they point at**, not a basic type: `Locator entity` -> class 0 `apiEntity`, `Parent Transform` -> class 2 `apiTransformComponent`.
+- Slots run in object order: CaribDiss objects 1–15 own slots 0–7, and the cape (`SkinnedSkirt_Fabric`, objects 16–41) starts at slot 8 (pointing at its own transform, object 17).
+- The cape's slots also point outside it: object 66 (the body `SkeletonComponent`) and object 118 (`CharacterLodComponent`). Copying an attachment means remapping these to the receiving character's equivalents.
+- Counting link fields per class gives 437 slots instead of 636: the rest sit inside lists and embedded structures. The exact slot order needs a decoder that reads every field.
+
+## Copying an attachment: what has to change in the receiving file
+
+1. Append the entity block (`01, u32 class, MOBJ`) to `RootNode`'s component list (count + 1), as the last objects so existing object numbers stay the same.
+2. Translate the class numbers inside the block to the receiver's class list; add missing class definitions (the cape needs 7: `AttachmentOffsetComponent`, `BoneModifierJointToJoint`, `BoneModifiersComponent`, `Hair`, `MatchJointsComponent`, `MatchJointsData`, `ParentResultNode`), translating the class numbers inside them too.
+3. Grow the sizes of `RootNode`, the root `MOBJ`, `OLST` and `ClassList`; update the object count and the link-table length.
+4. Append the attachment's link slots, with outside links remapped (body skeleton, LOD component, locators).
+5. Possibly add its files to the header dependency tree (a folder/file name tree: 319 names, 436 nodes of `u16 prev sibling, u32 name offset, u16 parent, u16 file, u16 ?` in the Airborne Trooper). To be tested; the game may load files that already exist in its archives without it.
