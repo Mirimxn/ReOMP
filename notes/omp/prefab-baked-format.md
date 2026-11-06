@@ -61,3 +61,19 @@ Reader: `tools/character-maker-prototype/reader/` (`schema.py` parses `TypeList`
 3. Grow the sizes of `RootNode`, the root `MOBJ`, `OLST` and `ClassList`; update the object count and the link-table length.
 4. Append the attachment's link slots, with outside links remapped (body skeleton, LOD component, locators).
 5. Possibly add its files to the header dependency tree (a folder/file name tree: 319 names, 436 nodes of `u16 prev sibling, u32 name offset, u16 parent, u16 file, u16 ?` in the Airborne Trooper). To be tested; the game may load files that already exist in its archives without it.
+
+## Full decoder status (6 Nov 2026, `reader/dec2.py`)
+
+94% of CaribDiss objects (2292 of 2445, everything nested inside included) decode to their exact size. The cape decodes 24 of its 26 objects.
+
+Field rules found so far:
+- Base class (flags `0xC...`, offset 0): its fields come first, recursively.
+- `c == 0`: list, u32 count then items.
+- Flags `0x9...`: link to an object, stored in the link table, nothing inline. **Exception (in progress):** links to classes that are not components (e.g. `AnimBlendTreeComponent.Root Node` -> `ResultNode`) are stored inline as 8 zero bytes, an 8-byte name hash and the node name string, followed by 9 more bytes still to be explained.
+- Flags `0x8...`, offset -1, or pointing at a component/entity class: not stored inline (link or runtime).
+- Flags `0x8...` to `nttResource...Handle...` / `...ResourceHandle` classes: resource link `u32 type, u8 has, [16-byte id, u32 len, path\0]`; nothing after `has` when it is 0.
+- Flags `0x8...` to other classes: the class's fields inline (an embedded struct).
+- `ClassObject` / `ClassObjectRef`: `u8 present`, then `u32 class` and the `MOBJ` record.
+- Fixed sizes from `TypeList`; `String` and `Data` are u32 length + bytes.
+
+Still failing: `BuildItTimeline*`, `RunBTAction`, `EntitySelectorViaScorer`, `InventoryItemLocator`, `ChooseItContext2`, `GameFlagComponent`, `ProjectileComponent`, `MiniCut`, `ActionMapComponent`, `RangedAttack`, `AnimBlendTreeComponent`, `PlaceResourceSequence`.
