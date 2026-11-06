@@ -77,3 +77,12 @@ Field rules found so far:
 - Fixed sizes from `TypeList`; `String` and `Data` are u32 length + bytes.
 
 Still failing: `BuildItTimeline*`, `RunBTAction`, `EntitySelectorViaScorer`, `InventoryItemLocator`, `ChooseItContext2`, `GameFlagComponent`, `ProjectileComponent`, `MiniCut`, `ActionMapComponent`, `RangedAttack`, `AnimBlendTreeComponent`, `PlaceResourceSequence`.
+
+## Adding an attachment (6 Nov 2026, `reader/add_attachment.py`, in-game test pending)
+
+- The root object is an `apiEntity` named `RootNode`; its `Components` list runs to the end of the root `MOBJ`. Top-level entities (helmet, cape, locators, ragdoll, ...) are items of that list.
+- Inline animation-node links (`0x9...` fields pointing at `AnimNode`-derived classes, e.g. `Root Node`): 8 bytes, 8-byte name hash, name string, 8 bytes.
+- **Link slots** are taken, in object order, by `0x9...` links and by `0x8...` links to components or entities. CaribDiss objects 1–15 take exactly 8, and the cape takes slots 8–29 (22).
+- Body layout is flat: `StreamInfo`, 8 bytes, `ResourceTimeStampGUID`, `GraphType`, `BakeContributingResources`, `u32 object count, u32 link count`, `TypeList`, `ClassList`, `u32 1`, `OLST`, link table. No size encloses `ClassList` or `OLST`.
+- Copy steps: append the entity block at the end of the root's components (so no existing object is renumbered); translate class numbers (`01, u32 class, MOBJ`) and add missing class definitions with their class numbers translated (type numbers are class numbers for base fields, `0x8/0x9` fields and types >= 26); append the entity's link slots with inside links renumbered and outside links mapped to the same class at the same place (e.g. root `SkeletonComponent`, root `CharacterLodComponent`); grow the root `MOBJ`, `OLST` and `ClassList` sizes and the class, object, link and component counts.
+- First test: CaribDiss `SkinnedSkirt_Fabric` (kama) added to the Airborne Trooper copy: 26 objects, 10 classes, 22 link slots, +9,704 bytes. The header dependency tree was left unchanged (the kama's files are in the game archives).

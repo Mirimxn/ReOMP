@@ -6,7 +6,7 @@ class Fail(Exception): pass
 class Dec:
     def __init__(s,d):
         s.d=d; s.S=Schema(d); s.NT=len(s.S.types); s.ok=collections.Counter(); s.bad=collections.Counter(); s.why={}
-        s.links=0; s.trace=None
+        s.links=0; s.trace=None; s.linklog=None; s.cur=None
     def flat(s,ci):
         out=[]
         for f in s.S.classes[ci]['fields']:
@@ -20,10 +20,16 @@ class Dec:
         for f in s.S.classes[ci]['fields']:
             if (f['flags']&0xC0000000)==0xC0000000 and f['ref']==0: return s.is_comp(f['type'],depth+1)
         return False
+    def root(s,ci,depth=0):
+        for f in s.S.classes[ci]['fields']:
+            if (f['flags']&0xC0000000)==0xC0000000 and f['ref']==0 and depth<30: return s.root(f['type'],depth+1)
+        return s.S.classes[ci]['name']
     def kind(s,f):
         fl=f['flags']&0xffffffff; t=f['type']
         if fl & 0x80000000:
-            if fl & 0x10000000: return 'link'
+            if fl & 0x10000000:
+                if 0<=t<len(s.S.classes) and s.root(t)=='AnimNode': return 'noderef'
+                return 'link'
             if not (0<=t<len(s.S.classes)): return 'type'
             if f['ref']==-1 or s.is_comp(t): return 'link'
             cn=s.S.classes[t]['name']
@@ -39,7 +45,14 @@ class Dec:
             for _ in range(n): s.one(r,f,k,depth)
         else: s.one(r,f,k,depth)
     def one(s,r,f,k,depth):
-        if k=='link': s.links+=1; return
+        if s.trace is not None: s.trace.append((f['name'],k,r.p))
+        if k=='link':
+            fl=f['flags']&0xffffffff; t=f['type']
+            sub='9' if fl&0x10000000 else ('8comp' if (0<=t<len(s.S.classes) and s.is_comp(t)) else '8minus1')
+            if s.linklog is not None: s.linklog.append((s.cur,f['name'],sub))
+            s.links+=1; return
+        if k=='noderef':   # link to a non-component (e.g. an animation node): 8 + 8-byte hash + name + 8
+            r.p+=16; n=r.u32(); r.p+=n; r.p+=8; return
         if k=='handle':
             r.u32(); h=r.u8()
             if h: r.p+=16; n=r.u32(); r.p+=n
@@ -64,7 +77,7 @@ class Dec:
     def mobj(s,r,ci,depth=0):
         o=r.p; sz=r.u32(); nm=r.str()
         if nm!='MOBJ': raise Fail(f'expected MOBJ got {nm[:20]!r}')
-        end=o+sz; cname=s.S.classes[ci]['name']; l0=s.links
+        end=o+sz; cname=s.S.classes[ci]['name']; l0=s.links; prev=s.cur; s.cur=(o,cname)
         try:
             r.u32()
             for f in s.flat(ci):
@@ -74,7 +87,7 @@ class Dec:
             s.ok[cname]+=1
         except (Fail,struct.error,IndexError,RecursionError) as e:
             s.bad[cname]+=1; s.why.setdefault(cname,(o,str(e)[:150]))
-        r.p=end
+        s.cur=prev; r.p=end
 if __name__=='__main__':
     d=open(sys.argv[1],'rb').read(); D=Dec(d)
     ol=d.find(b'OLST\0')-8; olsz=struct.unpack_from('<I',d,ol)[0]
