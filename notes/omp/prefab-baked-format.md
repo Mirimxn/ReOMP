@@ -86,3 +86,12 @@ Still failing: `BuildItTimeline*`, `RunBTAction`, `EntitySelectorViaScorer`, `In
 - Body layout is flat: `StreamInfo`, 8 bytes, `ResourceTimeStampGUID`, `GraphType`, `BakeContributingResources`, `u32 object count, u32 link count`, `TypeList`, `ClassList`, `u32 1`, `OLST`, link table. No size encloses `ClassList` or `OLST`.
 - Copy steps: append the entity block at the end of the root's components (so no existing object is renumbered); translate class numbers (`01, u32 class, MOBJ`) and add missing class definitions with their class numbers translated (type numbers are class numbers for base fields, `0x8/0x9` fields and types >= 26); append the entity's link slots with inside links renumbered and outside links mapped to the same class at the same place (e.g. root `SkeletonComponent`, root `CharacterLodComponent`); grow the root `MOBJ`, `OLST` and `ClassList` sizes and the class, object, link and component counts.
 - First test: CaribDiss `SkinnedSkirt_Fabric` (kama) added to the Airborne Trooper copy: 26 objects, 10 classes, 22 link slots, +9,704 bytes. The header dependency tree was left unchanged (the kama's files are in the game archives).
+
+## Header dependency list (6 Nov 2026, `reader/deps.py`)
+
+The game only loads files that are on this list: the kama's objects without its files on the list spawned nothing.
+
+- After the self ID: `u32 1, u32 2, u32 file count, u32 node count, u32 name block length`, the name block (names separated by `\0\0`), then the BrickVault-style **name tree**: 12-byte nodes `u16 last child, u16 previous sibling, i32 name offset, u16 parent, u16 file number` (node 0 = root, directories have file number 0).
+- Then `u32 0, u32 0, u32 record count` and **64-byte records**: `u32 kind` (1 `gsc`, 2 `ghg`, 36 texture, 44 anim, 47 bt, 53 audio_event, 62 prefab_baked, ...), `u32 tree node`, `u32 0`, `u32 platform flags` (`0x4fffffff` the `_dx11` model, `0x8fffffff` the `_nxg` model, else `0xffffffff`), `u32 0, u32 0, u32 -1`, 16-byte ID, `u32 link type` (2 or 1), 16 zero bytes.
+- Then build info and the source path with the resource ID, up to the header end. The header chunk size (BE u32 at 0) covers everything.
+- Adding a file: add missing folders and the file to the tree (new node: previous sibling = parent's last child, then parent's last child = new node; files get the next file number), append its record with the node number, and update the counts and the header size.
