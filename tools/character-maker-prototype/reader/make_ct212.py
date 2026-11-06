@@ -26,6 +26,8 @@ def retarget_texture(tex, folder, name):
     tid=os.urandom(16)
     out=bytearray(tex[:20]+struct.pack('>H',len(sp))+sp+tid+tex[22+n+16:])
     struct.pack_into('>I',out,0,hdr+len(sp)-n)
+    c=struct.unpack('>I',out[0:4])[0]+4; r=bytes(out).find(b'RTXT',c); assert r>0
+    out[r+46:r+62]=os.urandom(16)            # inner id must be unique too
     return bytes(out),tid
 def texture_from_dds(dds):
     """wrap a BC7 DDS (DX10 header) into the game texture layout, using the 212 texture as the template"""
@@ -89,109 +91,121 @@ for ext in ('NXG_TEXTURES','PC_SHADERS'):
     x[i:i+16]=os.urandom(16)
     resources.append(put(f'CHARS/SUPER_CHARACTER/HAT/{HAT.upper()}_DX11.{ext}',bytes(x)))
 
-# ---------- the prefab ----------
-d=bytearray(open(glob.glob(f'{ATT}/*-CARIBDISS.PREFAB_BAKED')[0],'rb').read())
-S=Schema(bytes(d)); O,olo,olsz,tail=objtable(bytes(d),S)
-edits=[]   # (pos, old_len, new_bytes)
+def patch(src,is_prefab):
+    # ---------- the prefab ----------
+    d=bytearray(open(src,'rb').read())
+    S=Schema(bytes(d)); O,olo,olsz,tail=objtable(bytes(d),S)
+    edits=[]   # (pos, old_len, new_bytes)
 
-def handle_at_path(path):
-    """positions of resource handles whose path is `path` (u32 2, u8 1, id16, u32 len, path\\0)"""
-    out=[]; b=path.encode()+b'\0'; o=0; body=bytes(d)
-    hdr_end=struct.unpack('>I',body[0:4])[0]+4
-    while (o:=body.find(b,o+1))>0:
-        if o<hdr_end: continue
-        st=o-4-16-1-4
-        if body[st:st+5]==b'\x02\x00\x00\x00\x01' and struct.unpack_from('<I',body,o-4)[0]==len(b): out.append(st)
-    return out
-def handle_bytes(path,rid): b=path.encode()+b'\0'; return b'\x02\x00\x00\x00\x01'+rid+struct.pack('<I',len(b))+b
-def handle_len(pos):
-    if d[pos+4]==0: return 5
-    return 5+16+4+struct.unpack_from('<I',d,pos+21)[0]
+    def handle_at_path(path):
+        """positions of resource handles whose path is `path` (u32 2, u8 1, id16, u32 len, path\\0)"""
+        out=[]; b=path.encode()+b'\0'; o=0; body=bytes(d)
+        hdr_end=struct.unpack('>I',body[0:4])[0]+4
+        while (o:=body.find(b,o+1))>0:
+            if o<hdr_end: continue
+            st=o-4-16-1-4
+            if body[st:st+5]==b'\x02\x00\x00\x00\x01' and struct.unpack_from('<I',body,o-4)[0]==len(b): out.append(st)
+        return out
+    def handle_bytes(path,rid): b=path.encode()+b'\0'; return b'\x02\x00\x00\x00\x01'+rid+struct.pack('<I',len(b))+b
+    def handle_len(pos):
+        if d[pos+4]==0: return 5
+        return 5+16+4+struct.unpack_from('<I',d,pos+21)[0]
 
-swaps={'chars/super_character_texture/body/body_caribdiss_front_diff.texture':TX['body_front'],
-       'chars/super_character_texture/body/body_caribdiss_back_diff.texture':TX['body_back'],
-       'chars/super_character_texture/leg/leg_caribdiss_left_diff.texture':TX['leg_left'],
-       'chars/super_character_texture/leg/leg_caribdiss_right_diff.texture':TX['leg_right'],
-       'chars/super_character_texture/arm/arm_caribdiss_left_diff.texture':TX['arm_left'],
-       'chars/super_character_texture/arm/arm_caribdiss_right_diff.texture':TX['arm_right'],
-       'chars/super_character_texture/hip/hip_caribdiss_diff.texture':TX['hip'],
-       'chars/super_character_texture/hat/hat_caribdiss_norm.texture':TX['hat_nrm'],
-       'chars/super_character_texture/hat/hat_caribdiss_brdf.texture':TX['hat_brdf']}
-for old,new in swaps.items():
-    ps=handle_at_path(old); assert ps, old
-    for p in ps: edits.append((p,handle_len(p),handle_bytes(new,NEW_TEX[new][1])))
-# helmet model: our GSC path, keep the original model id
-hat_model='chars/super_character/hat/hat_caribdiss_dx11.gsc'
-p=handle_at_path(hat_model); assert len(p)==1; p=p[0]; hat_id=bytes(d[p+5:p+21])
-edits.append((p,handle_len(p),handle_bytes(f'chars/super_character/hat/{HAT}_dx11.gsc',hat_id)))
-# helmet material: fill the empty diffuse_1 slot of the second material override, set the part name
-hatent='HAT_CaribDiss'
-tt=[x for x in O if x['path']==hatent and x['class']=='nttRenderTTExportObject'][0]
-D=Dec(bytes(d)); D.trace=[]; D.mobj(R(bytes(d),tt['o']),struct.unpack_from('<I',d,tt['o']-4)[0]); assert not D.bad
-dif=[p for n_,k,p in D.trace if n_=='diffuse_1']; assert len(dif)==2 and d[dif[1]:dif[1]+5]==b'\x02\x00\x00\x00\x00'
-edits.append((dif[1],5,handle_bytes(TX['hat_diff'],NEW_TEX[TX['hat_diff']][1])))
-sn=[p for n_,k,p in D.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]
-print('helmet part name was',bytes(d[sn+4:sn+4+ln]))
-edits.append((sn,4+ln,struct.pack('<I',len(b'Hat_Cl2ab\0'))+b'Hat_Cl2ab\0'))
+    swaps={'chars/super_character_texture/body/body_caribdiss_front_diff.texture':TX['body_front'],
+           'chars/super_character_texture/body/body_caribdiss_back_diff.texture':TX['body_back'],
+           'chars/super_character_texture/leg/leg_caribdiss_left_diff.texture':TX['leg_left'],
+           'chars/super_character_texture/leg/leg_caribdiss_right_diff.texture':TX['leg_right'],
+           'chars/super_character_texture/arm/arm_caribdiss_left_diff.texture':TX['arm_left'],
+           'chars/super_character_texture/arm/arm_caribdiss_right_diff.texture':TX['arm_right'],
+           'chars/super_character_texture/hip/hip_caribdiss_diff.texture':TX['hip'],
+           'chars/super_character_texture/hat/hat_caribdiss_norm.texture':TX['hat_nrm'],
+           'chars/super_character_texture/hat/hat_caribdiss_brdf.texture':TX['hat_brdf']}
+    for old,new in swaps.items():
+        ps=handle_at_path(old); assert ps, old
+        for p in ps: edits.append((p,handle_len(p),handle_bytes(new,NEW_TEX[new][1])))
+    # helmet model: our GSC path, keep the original model id
+    hat_model='chars/super_character/hat/hat_caribdiss_dx11.gsc'
+    p=handle_at_path(hat_model); assert len(p)==1; p=p[0]; hat_id=bytes(d[p+5:p+21])
+    edits.append((p,handle_len(p),handle_bytes(f'chars/super_character/hat/{HAT}_dx11.gsc',hat_id)))
+    # helmet material: fill the empty diffuse_1 slot of the second material override, set the part name
+    hatent='HAT_CaribDiss'
+    tt=[x for x in O if x['path']==hatent and x['class']=='nttRenderTTExportObject'][0]
+    D=Dec(bytes(d)); D.trace=[]; D.mobj(R(bytes(d),tt['o']),struct.unpack_from('<I',d,tt['o']-4)[0]); assert not D.bad
+    dif=[p for n_,k,p in D.trace if n_=='diffuse_1']; assert len(dif)==2 and d[dif[1]:dif[1]+5]==b'\x02\x00\x00\x00\x00'
+    edits.append((dif[1],5,handle_bytes(TX['hat_diff'],NEW_TEX[TX['hat_diff']][1])))
+    sn=[p for n_,k,p in D.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]
+    print('helmet part name was',bytes(d[sn+4:sn+4+ln]))
+    edits.append((sn,4+ln,struct.pack('<I',len(b'Hat_Cl2ab\0'))+b'Hat_Cl2ab\0'))
 
-# same-size edits first (they do not move anything)
-# lower the helmet to the Utapau trooper's height (local and world transforms of the helmet entity)
-tr=[x for x in O if x['path']==hatent and x['class']=='apiTransformComponent'][0]
-p=tr['o']+17+19
-for k in (9,9+12):   # pos.y in local NuTransform (floats 8..11) and world NuTransform
-    y=struct.unpack_from('<f',d,p+4*k)[0]; struct.pack_into('<f',d,p+4*k,0.3742397129535675); print('helmet y',y,'->',struct.unpack_from('<f',d,p+4*k)[0])
-# disable the extra model and the face texture (entity and its components)
-for ent in ('AdditionalModel_CaribDiss','FaceTex_CaribDiss'):
-    for x in O:
-        if (x['class']=='apiEntity' and x['entity']==ent and x['path']=='') or x['path']==ent or x['path'].startswith(ent+'/'):
-            if x['class'] in ('apiEntity',) or S.classes[struct.unpack_from('<I',d,x['o']-4)[0]]['fields'][:1] and D.is_comp(struct.unpack_from('<I',d,x['o']-4)[0]):
-                assert d[x['o']+17] in (0,1); d[x['o']+17]=0
-    print('disabled',ent)
-# own name, ids and roster link
-n=selfpath_len(d); spath=bytes(d[22:22+n]); assert spath.endswith(b'/CaribDiss.prefab_baked\0'), spath
-d[22:22+n]=spath.replace(b'/CaribDiss.prefab_baked',b'/CT212Kama.prefab_baked'); d[22+n:38+n]=os.urandom(16)
-for old,new in [(b'/caribdiss.prefab\0',b'/ct212kama.prefab\0'),(b'/caribdiss_character.prefab\0',b'/ct212kama_character.prefab\0'),(b'/caribdiss_cheapminifig.scene\0',b'/ct212kama_cheapminifig.scene\0')]:
-    c=bytes(d).count(old); d[:]=bytes(d).replace(old,new); print('inner name',new.decode().strip('/\0'),'x',c)
-src=b'/ct212kama.prefab\0'; o=bytes(d).find(src); assert o>0; oid=bytes(d[o+len(src):o+len(src)+16]); rid=os.urandom(16)
-print('resource id occurrences',bytes(d).count(oid)); d[:]=bytes(d).replace(oid,rid)
-o=bytes(d).find(b'Characters\0');
-while o>=0:
-    ln=struct.unpack_from('<I',d,o+27)[0]
-    if bytes(d[o+31:o+31+ln-1])==b'CaribDiss': break
-    o=bytes(d).find(b'Characters\0',o+1)
-assert o>0; d[o+11:o+27]=bytes(16); d[o+31:o+31+9]=b'OMP_CT212'; print('roster link -> OMP_CT212')
+    # same-size edits first (they do not move anything)
+    # lower the helmet to the Utapau trooper's height (local and world transforms of the helmet entity)
+    tr=[x for x in O if x['path']==hatent and x['class']=='apiTransformComponent'][0]
+    p=tr['o']+17+19
+    for k in (9,9+12):   # pos.y in local NuTransform (floats 8..11) and world NuTransform
+        y=struct.unpack_from('<f',d,p+4*k)[0]; struct.pack_into('<f',d,p+4*k,0.3742397129535675); print('helmet y',y,'->',struct.unpack_from('<f',d,p+4*k)[0])
+    # disable the extra model and the face texture (entity and its components)
+    for ent in ('AdditionalModel_CaribDiss','FaceTex_CaribDiss'):
+        for x in O:
+            if (x['class']=='apiEntity' and x['entity']==ent and x['path']=='') or x['path']==ent or x['path'].startswith(ent+'/'):
+                if x['class'] in ('apiEntity',) or S.classes[struct.unpack_from('<I',d,x['o']-4)[0]]['fields'][:1] and D.is_comp(struct.unpack_from('<I',d,x['o']-4)[0]):
+                    assert d[x['o']+17] in (0,1); d[x['o']+17]=0
+        print('disabled',ent)
+    # own name, ids and roster link
+    n=selfpath_len(d); spath=bytes(d[22:22+n])
+    if is_prefab:
+        assert spath.endswith(b'/CaribDiss.prefab_baked\0'), spath; spath=spath.replace(b'/CaribDiss.prefab_baked',b'/CT212Kama.prefab_baked')
+    else:
+        assert spath.endswith(b'/caribdiss_cheapminifig.scene_baked\0'), spath; spath=spath.replace(b'/caribdiss_cheapminifig',b'/ct212kama_cheapminifig')
+    d[22:22+n]=spath; d[22+n:38+n]=os.urandom(16)
+    for old,new in [(b'/caribdiss.prefab\0',b'/ct212kama.prefab\0'),(b'/caribdiss_character.prefab\0',b'/ct212kama_character.prefab\0'),(b'/caribdiss_cheapminifig.scene\0',b'/ct212kama_cheapminifig.scene\0')]:
+        c=bytes(d).count(old); d[:]=bytes(d).replace(old,new); print('inner name',new.decode().strip('/\0'),'x',c)
+    srcname=b'/ct212kama.prefab\0' if is_prefab else b'/ct212kama_cheapminifig.scene\0'; o=bytes(d).find(srcname); assert o>0; oid=bytes(d[o+len(srcname):o+len(srcname)+16]); rid=os.urandom(16)
+    print('resource id occurrences',bytes(d).count(oid)); d[:]=bytes(d).replace(oid,rid)
+    o=bytes(d).find(b'Characters\0');
+    while o>=0:
+        ln=struct.unpack_from('<I',d,o+27)[0]
+        if bytes(d[o+31:o+31+ln-1])==b'CaribDiss': break
+        o=bytes(d).find(b'Characters\0',o+1)
+    if o>0: d[o+11:o+27]=bytes(16); d[o+31:o+31+9]=b'OMP_CT212'; print('roster link -> OMP_CT212')
+    else: print('no roster link in this file')
 
-# size-changing edits, highest position first, growing every enclosing object and OLST
-O2,olo,olsz,_=objtable(bytes(d),Schema(bytes(d)))
-for pos,oldlen,newb in sorted(edits,key=lambda e:-e[0]):
-    delta=len(newb)-oldlen
-    d[pos:pos+oldlen]=newb
-    if delta:
-        for x in O2:
-            if x['o']<pos<x['end']: struct.pack_into('<I',d,x['o'],struct.unpack_from('<I',d,x['o'])[0]+delta)
-        struct.pack_into('<I',d,olo,struct.unpack_from('<I',d,olo)[0]+delta)
-print('edits applied:',len(edits))
+    # size-changing edits, highest position first, growing every enclosing object and OLST
+    O2,olo,olsz,_=objtable(bytes(d),Schema(bytes(d)))
+    for pos,oldlen,newb in sorted(edits,key=lambda e:-e[0]):
+        delta=len(newb)-oldlen
+        d[pos:pos+oldlen]=newb
+        if delta:
+            for x in O2:
+                if x['o']<pos<x['end']: struct.pack_into('<I',d,x['o'],struct.unpack_from('<I',d,x['o'])[0]+delta)
+            struct.pack_into('<I',d,olo,struct.unpack_from('<I',d,olo)[0]+delta)
+    print('edits applied:',len(edits))
 
-# header: repoint the helmet model records to the new path, add records for the new textures
-DH=Deps(bytes(d))
-import deps as depsmod
-def rec_bytes(kind,flags,rid,reftype=2):
-    return struct.pack('>7I',kind,0,0,flags,0,0,0xffffffff)+rid+struct.pack('>I',reftype)+bytes(16)
-entries=[(p,rec_bytes(36,0xffffffff,NEW_TEX[p][1])) for p in NEW_TEX]
-dd,added=depsmod.add_dependencies(bytes(d),entries+[(f'chars/super_character/hat/{HAT}_dx11.gsc',None),(f'chars/super_character/hat/{HAT}_nxg.gsc',None)]) if False else (None,None)
-# add tree nodes for the gsc paths via a dummy record, then repoint the original hat records to them
-gsc_new=f'chars/super_character/hat/{HAT}_dx11.gsc'; nxg_new=f'chars/super_character/hat/{HAT}_nxg.gsc'
-old_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/hat/hat_caribdiss_dx11.gsc']
-old_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/hat/hat_caribdiss_nxg.gsc']
-assert len(old_dx)==1 and len(old_nx)==1
-entries+= [(gsc_new,DH.recs[old_dx[0]]),(nxg_new,DH.recs[old_nx[0]])]
-out,added=depsmod.add_dependencies(bytes(d),entries)
-# drop the two original helmet records now that copies point at the new paths
-N=Deps(out); keep=[k for k in range(N.nrec) if k not in (old_dx[0],old_nx[0])]
-recs=b''.join(N.recs[k] for k in keep)
-out=bytearray(out[:N.rec_at-4])+struct.pack('>I',len(keep))+recs+out[N.after:]
-struct.pack_into('>I',out,0,struct.unpack('>I',out[0:4])[0]-64*2)
-print('header: tree entries added',len(added),'records',N.nrec,'->',len(keep))
-put('CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED',bytes(out)); resources.insert(0,'CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED')
+    # header: repoint the helmet model records to the new path, add records for the new textures
+    DH=Deps(bytes(d))
+    import deps as depsmod
+    def rec_bytes(kind,flags,rid,reftype=2):
+        return struct.pack('>7I',kind,0,0,flags,0,0,0xffffffff)+rid+struct.pack('>I',reftype)+bytes(16)
+    entries=[(p,rec_bytes(36,0xffffffff,NEW_TEX[p][1])) for p in NEW_TEX]
+    #dd,added=depsmod.add_dependencies(bytes(d),entries+[(f'chars/super_character/hat/{HAT}_dx11.gsc',None),(f'chars/super_character/hat/{HAT}_nxg.gsc',None)]) if False else (None,None)
+    # add tree nodes for the gsc paths via a dummy record, then repoint the original hat records to them
+    gsc_new=f'chars/super_character/hat/{HAT}_dx11.gsc'; nxg_new=f'chars/super_character/hat/{HAT}_nxg.gsc'
+    old_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/hat/hat_caribdiss_dx11.gsc']
+    old_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/hat/hat_caribdiss_nxg.gsc']
+    assert len(old_dx)==1 and len(old_nx)==1
+    entries+= [(gsc_new,DH.recs[old_dx[0]]),(nxg_new,DH.recs[old_nx[0]])]
+    out,added=depsmod.add_dependencies(bytes(d),entries)
+    # drop the two original helmet records now that copies point at the new paths
+    N=Deps(out); keep=[k for k in range(N.nrec) if k not in (old_dx[0],old_nx[0])]
+    recs=b''.join(N.recs[k] for k in keep)
+    out=bytearray(out[:N.rec_at-4])+struct.pack('>I',len(keep))+recs+out[N.after:]
+    struct.pack_into('>I',out,0,struct.unpack('>I',out[0:4])[0]-64*2)
+    print('header: tree entries added',len(added),'records',N.nrec,'->',len(keep))
+    return bytes(out)
+
+out=patch(glob.glob(f'{ATT}/*-CARIBDISS.PREFAB_BAKED')[0],True)
+put('CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED',out)
+scene=patch(glob.glob(f'{ATT}/*-CARIBDISS_CHEAPMINIFIG.SCENE_BAKED')[0],False)
+put('CHARS/MINIFIG/CARIBDISS/CT212KAMA_CHEAPMINIFIG.SCENE_BAKED',scene)
+resources[0:0]=['CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED']   # the preview scene is served by v1, not registered
 json.dump({'resources':resources},open(os.path.join(OUT,'resources.json'),'w'),indent=1)
 print('files:',len(resources))
