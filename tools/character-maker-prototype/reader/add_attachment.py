@@ -39,7 +39,7 @@ def remap_class_record(rec,S,ci,mapc):
         r.p=e3
     return bytes(rec)
 
-def main(donor_path,target_path,out_path,entity):
+def main(donor_path,target_path,out_path,entity,after=None):
     dd=open(donor_path,'rb').read(); td=bytearray(open(target_path,'rb').read())
     SD=Schema(dd); ST=Schema(bytes(td))
     OD,_,_,_=objtable(dd,SD); OT,olT,olszT,tailT=objtable(bytes(td),ST)
@@ -87,26 +87,43 @@ def main(donor_path,target_path,out_path,entity):
     print(f'link slots: {mine} (donor slots {before}..{before+mine-1})')
     slots=list(tailvals[before:before+mine])
     # ---- map links: inside -> new numbers, outside -> same class at the same place in the target
-    newbase=len(OT)
+    if after:
+        h=[x for x in OT if x['class']=='apiEntity' and x['path']=='' and x['entity']==after]; assert len(h)==1, after
+        h=h[0]; P=[x for x in OT if h['o']<=x['o']<h['end']][-1]['i']+1; insert_byte=h['end']
+        DT=Dec(bytes(td)); DT.linklog=[]; e_=0
+        for x in OT[1:P]:
+            if x['o']<e_: continue
+            DT.mobj(R(bytes(td),x['o']),struct.unpack_from('<I',td,x['o']-4)[0]); e_=x['end']
+        slot_at=len(DT.linklog)
+        print(f'inserting after {after!r}: object {P}, slot {slot_at}, byte {insert_byte}')
+    else:
+        P=len(OT); insert_byte=None; slot_at=None
+    newbase=P
     def map_obj(v):
         if v<0: return v
         if first<=v<=last: return newbase+(v-first)
         x=OD[v]; m=[y['i'] for y in OT if y['class']==x['class'] and y['path']==x['path'] and (y['entity']==x['entity'])]
         if len(m)!=1: raise SystemExit(f'cannot map donor object #{v} {x["class"]} in {x["path"]!r}: candidates {m}')
         return m[0]
-    newslots=[map_obj(v) for v in slots]
+    shift=len(inside)
+    def outside(v):
+        m=map_obj(v); return m+shift if m>=P else m      # m is a target object number from before the insertion
+    newslots=[newbase+(v-first) if first<=v<=last else (v if v<0 else outside(v)) for v in slots]
     print('slots donor  :',slots); print('slots target :',newslots)
     # ---- write the target
     # 1. link table: append
     ntT=struct.unpack_from('<I',td,find_rec(bytes(td),'TypeList')-4)[0]
     assert tailT+4*ntT==len(td), 'link table is not at the end of the file'
-    td+=struct.pack('<%di'%len(newslots),*newslots)
+    old=list(struct.unpack_from('<%di'%ntT,td,tailT))
+    old=[v+shift if v>=P else v for v in old]
+    if slot_at is None: slot_at=len(old)
+    allv=old[:slot_at]+newslots+old[slot_at:]
+    td[tailT:]=struct.pack('<%di'%len(allv),*allv)
     # 2. object list: append the block as the last root component
     # the root is an apiEntity named 'RootNode': prefix, Enabled, Guid, MBA, Locked, Name, Mobility, Platform, NameSearch, Components
     root=OT[0]; r=R(bytes(td),root['o']+13); r.u32(); r.u8(); r.p+=16; r.p+=2; nm=r.str(); assert nm=='RootNode',nm
     cnt_pos=r.p+4+2+1
-    insert_at=root['end']
-    assert max(x['end'] for x in OT)==insert_at
+    insert_at=insert_byte or root['end']
     td[insert_at:insert_at]=block
     for pos in (root['o'],olT):                  # root MOBJ, OLST sizes
         struct.pack_into('<I',td,pos,struct.unpack_from('<I',td,pos)[0]+len(block))
@@ -126,4 +143,4 @@ def main(donor_path,target_path,out_path,entity):
     print(f'written {out_path}: {len(td)} bytes (+{len(td)-len(open(target_path,"rb").read())})')
 
 if __name__=='__main__':
-    main(*sys.argv[1:5])
+    main(*sys.argv[1:6])
