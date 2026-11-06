@@ -216,7 +216,7 @@ public static partial class V1
                 var (c, r) = free[i];
                 uint x = (uint)(c * Cell), y = (uint)(r * Cell);
                 sheet.WriteCell((int)x, (int)y, todo[i].Rgba);
-                index.Sprites.Add(new Sprite { Name = todo[i].Name, X = x, Y = y, W = Cell, H = Cell });
+                index.Sprites.Add(new Sprite { Name = todo[i].Name, X = x, Y = y, W = (uint)Cell, H = (uint)Cell });
                 placements.Add(new Placement(todo[i].Name, x, y, true));
             }
 
