@@ -104,6 +104,8 @@ public static partial class V1
 
         public sealed class Sheet
         {
+            const uint FormatBc3 = 6, FormatBc7 = 31;
+            readonly uint _format;
             readonly byte[] _head;
             readonly int _chunk2SizeOffset;
             readonly int _heightOffset;
@@ -122,8 +124,9 @@ public static partial class V1
                 Width = (int)ReadU32(data, rtxt + 8);
                 Height = (int)ReadU32(data, rtxt + 12);
                 var mips = ReadU32(data, rtxt + 20);
-                var format = ReadU32(data, rtxt + 28);
-                if (format != 6 || mips != 1) throw new InvalidDataException($"TEXTURE: expected DXT5 with 1 mip, got format {format}, mips {mips}");
+                _format = ReadU32(data, rtxt + 28);
+                if ((_format != FormatBc3 && _format != FormatBc7) || mips != 1)
+                    throw new InvalidDataException($"TEXTURE: expected DXT5 (6) or BC7 (31) with 1 mip, got format {_format}, mips {mips}");
                 if (Width % Cell != 0 || Height % Cell != 0) throw new InvalidDataException($"TEXTURE: size {Width}x{Height} is not a multiple of {Cell}");
 
                 _heightOffset = rtxt + 12;
@@ -137,6 +140,13 @@ public static partial class V1
             {
                 var grown = new byte[_pixels.Length + Width * pixelRows]; // zero DXT5 blocks = transparent
                 Buffer.BlockCopy(_pixels, 0, grown, 0, _pixels.Length);
+                if (_format == FormatBc7)
+                {
+                    // An all-zero BC7 block is a reserved mode; fill with a valid transparent block instead
+                    var clear = new byte[16];
+                    Bc7.EncodeBlock(new byte[64], clear);
+                    for (var o = _pixels.Length; o < grown.Length; o += 16) Buffer.BlockCopy(clear, 0, grown, o, 16);
+                }
                 _pixels = grown;
                 Height += pixelRows;
             }
@@ -155,7 +165,8 @@ public static partial class V1
                             Buffer.BlockCopy(rgba, ((by * 4 + j) * Cell + bx * 4) * 4, block, j * 16, 16);
                         }
                         var o = ((y / 4 + by) * blocksPerRow + x / 4 + bx) * 16;
-                        Bc3.EncodeBlock(block, _pixels.AsSpan(o, 16));
+                        if (_format == FormatBc7) Bc7.EncodeBlock(block, _pixels.AsSpan(o, 16));
+                        else Bc3.EncodeBlock(block, _pixels.AsSpan(o, 16));
                     }
                 }
             }
@@ -281,6 +292,111 @@ public static partial class V1
     }
 
     // Small DXT5/BC3 block encoder (range fit). Good enough for UI icons.
+    // BC7 encoder using mode 6 only (one subset, RGBA, 7-bit endpoints + 1 p-bit each, 4-bit indices).
+    static class Bc7
+    {
+        static readonly int[] Weights = [0, 4, 9, 13, 17, 21, 26, 30, 34, 38, 43, 47, 51, 55, 60, 64];
+
+        static int Interp(int a, int b, int w) => ((64 - w) * a + w * b + 32) >> 6;
+
+        // rgba: 16 pixels, 4 bytes each (row-major 4x4). Writes 16 bytes.
+        public static void EncodeBlock(byte[] rgba, Span<byte> output)
+        {
+            int[] lo = [255, 255, 255, 255], hi = [0, 0, 0, 0];
+            var anyVisible = false;
+            for (var k = 0; k < 16; k++) anyVisible |= rgba[k * 4 + 3] > 0;
+            for (var k = 0; k < 16; k++)
+            {
+                // Colour bounds ignore fully transparent pixels (their colour is never seen)
+                if (!anyVisible || rgba[k * 4 + 3] > 0)
+                {
+                    for (var c = 0; c < 3; c++) { lo[c] = Math.Min(lo[c], rgba[k * 4 + c]); hi[c] = Math.Max(hi[c], rgba[k * 4 + c]); }
+                }
+                lo[3] = Math.Min(lo[3], rgba[k * 4 + 3]);
+                hi[3] = Math.Max(hi[3], rgba[k * 4 + 3]);
+            }
+
+            var bestErr = long.MaxValue;
+            int[] bestQ0 = new int[4], bestQ1 = new int[4], bestIdx = new int[16];
+            int bestP0 = 0, bestP1 = 0;
+            int[] q0 = new int[4], q1 = new int[4], idx = new int[16];
+            var pal = new int[16, 4];
+            for (var p0 = 0; p0 < 2; p0++)
+            {
+                for (var p1 = 0; p1 < 2; p1++)
+                {
+                    for (var c = 0; c < 4; c++)
+                    {
+                        q0[c] = Math.Clamp((lo[c] - p0 + 1) >> 1, 0, 127);
+                        q1[c] = Math.Clamp((hi[c] - p1 + 1) >> 1, 0, 127);
+                    }
+                    for (var i = 0; i < 16; i++)
+                    {
+                        for (var c = 0; c < 4; c++)
+                        {
+                            pal[i, c] = Interp((q0[c] << 1) | p0, (q1[c] << 1) | p1, Weights[i]);
+                        }
+                    }
+
+                    long err = 0;
+                    for (var k = 0; k < 16; k++)
+                    {
+                        int a = rgba[k * 4 + 3], bi = 0;
+                        var be = long.MaxValue;
+                        for (var i = 0; i < 16; i++)
+                        {
+                            long ce = 0;
+                            for (var c = 0; c < 3; c++) { long d = pal[i, c] - rgba[k * 4 + c]; ce += d * d; }
+                            long da = pal[i, 3] - a;
+                            var e = ce * a + 255 * da * da;
+                            if (e < be) { be = e; bi = i; }
+                        }
+                        idx[k] = bi;
+                        err += be;
+                    }
+                    if (err < bestErr)
+                    {
+                        bestErr = err;
+                        Array.Copy(q0, bestQ0, 4);
+                        Array.Copy(q1, bestQ1, 4);
+                        Array.Copy(idx, bestIdx, 16);
+                        bestP0 = p0;
+                        bestP1 = p1;
+                    }
+                }
+            }
+
+            // The first index is stored with 3 bits, so its top bit must be 0: swap endpoints if needed
+            if (bestIdx[0] >= 8)
+            {
+                (bestQ0, bestQ1) = (bestQ1, bestQ0);
+                (bestP0, bestP1) = (bestP1, bestP0);
+                for (var k = 0; k < 16; k++) bestIdx[k] = 15 - bestIdx[k];
+            }
+
+            ulong low = 0, high = 0;
+            var pos = 0;
+            void Put(int value, int bits)
+            {
+                for (var b = 0; b < bits; b++, pos++)
+                {
+                    if (((value >> b) & 1) == 0) continue;
+                    if (pos < 64) low |= 1UL << pos;
+                    else high |= 1UL << (pos - 64);
+                }
+            }
+            Put(1 << 6, 7); // mode 6
+            for (var c = 0; c < 4; c++) { Put(bestQ0[c], 7); Put(bestQ1[c], 7); }
+            Put(bestP0, 1);
+            Put(bestP1, 1);
+            Put(bestIdx[0], 3);
+            for (var k = 1; k < 16; k++) Put(bestIdx[k], 4);
+
+            BinaryPrimitives.WriteUInt64LittleEndian(output, low);
+            BinaryPrimitives.WriteUInt64LittleEndian(output[8..], high);
+        }
+    }
+
     static class Bc3
     {
         // rgba: 16 pixels * 4 bytes, row-major inside the 4x4 block.

@@ -48,7 +48,7 @@ The roster draws previews through `UIRenderTargetModelLoader::LoadGraph`, and on
 
 ### Icons
 
-Each roster has one icon sheet: vehicles use `ui/icons/vehicles/vehicles.tsh` with `vehicles_dx11.texture` (256 px cells), characters use `ui/icons/characters/characters.tsh` with `characters_dx11.texture` (128 px cells, 3712x3712, all 841 cells taken). The module reads the original pair from `omp-data/vehicle-icons/` or `omp-data/character-icons/`. If a pair is missing there but an untouched extracted copy is in the game's `UI/ICONS/<roster>` folder, it saves that copy there first. Each `OMP_<id>` icon goes into an empty cell; when none are left the sheet grows by whole rows at the bottom, so no existing icon is moved or covered. The result is cached in `generated/` and the game is redirected to it.
+Each roster has one icon sheet: vehicles use `ui/icons/vehicles/vehicles.tsh` with `vehicles_dx11.texture` (DXT5, 256 px cells), characters use `ui/icons/characters/characters.tsh` with `characters_dx11.texture` (BC7, 128 px cells, 3712x3712, all 841 cells taken; new icons are encoded with BC7 mode 6). The module reads the original pair from `omp-data/vehicle-icons/` or `omp-data/character-icons/`. If a pair is missing there but an untouched extracted copy is in the game's `UI/ICONS/<roster>` folder, it saves that copy there first. Each `OMP_<id>` icon goes into an empty cell; when none are left the sheet grows by whole rows at the bottom, so no existing icon is moved or covered. The result is cached in `generated/` and the game is redirected to it.
 
 ### Asset rules
 
