@@ -105,7 +105,15 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
     h=struct.unpack('>I',out[:4])[0]; c=h+4; struct.pack_into('>I',out,c,len(out)-c-4)
     # internal model name (same length, it sits in the fixed-size name table)
     i=out.find(b'default_string\0'); j=i+15; e=out.index(b'\0',j); old=bytes(out[j:e])
-    assert len(internal_name)==len(old), (old,internal_name); out[j:e]=internal_name.encode()
+    assert len(internal_name)==len(old), (old,internal_name)
+    # the name is stored twice: in the name table and again in the model chunk after the mesh (that one is what the prefab's Special Name matches)
+    pat=b'\0'+old+b'\0'; n_=0; k=0
+    while (k:=bytes(out).find(pat,k))>=0:
+        out[k+1:k+1+len(old)]=internal_name.encode(); n_+=1
+    k=0
+    while (k:=bytes(out).find(b'$'+old+b'\0',k))>=0:
+        out[k+1:k+1+len(old)]=internal_name.encode(); n_+=1
+    assert n_>=2, n_; print('model name copies renamed:',n_)
     # own path and id, shader/texture-list names
     n=struct.unpack('>H',out[20:22])[0]; sp=self_path.encode(); assert len(sp)<n
     out[22:22+n]=sp+bytes(n-len(sp)); k=22+n
