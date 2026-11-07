@@ -8,6 +8,8 @@ from objtree import objtable
 from dec2 import Dec
 from deps import Deps
 import tints as tintmod
+import donorswap
+DONOR_DIR='/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/ct212/212_trooper/CHARS/MINIFIG/CLONETROOPER'
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd')
 import make_pauldron_gsc
 
@@ -149,12 +151,18 @@ kn=kn[:p0]+nxgmod.dxt1_dds(_k,kn[p0:p0+128])+kn[p0+l0:]; nxgmod.dds_blobs(kn)
 # the white texture is shared by every character: give our entry its own id and name so the game does not reuse the cached white one
 kn=bytearray(kn); _w=bytes(kn).find(b'template/lego_white255.nut\0'); _s=bytes(kn).rfind(b'lego_models_extended',0,_w)
 assert _s>0 and kn[_s-5:_s-1]==b'\x00\x01\x00\x00'
-kn[_s-21:_s-5]=os.urandom(16); kn[_w+9:_w+22]=b'kamact212diff'; kn=bytes(kn)
+_old_id=bytes(kn[_s-21:_s-5]); _new_id=os.urandom(16)
+kn[_s-21:_s-5]=_new_id; kn[_w+9:_w+22]=b'kamact212diff'; kn=bytes(kn)
+# the model's material names its textures by id and name: point it at the new entry
+_n_id=kg.count(_old_id); _n_nm=kg.count(b'template/lego_white255.nut\0')
+kg=kg.replace(_old_id,_new_id).replace(b'template/lego_white255.nut\0',b'template/kamact212diff.nut\0')
+print('kama material references updated: ids',_n_id,'names',_n_nm)
 print('kama copy: names renamed',c1,c2,c3,'; white texture replaced by KAMA_AIRBORN',_k.size)
 for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
 from PIL import Image
-pdiff=Image.open(att('bc98a4b7-image.png'.split('-',1)[1]) if False else glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA'); pdiff.putalpha(255)
+pdiff=Image.open(glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA')
+_bg=Image.new('RGBA',pdiff.size,(0,0,0,255)); _bg.alpha_composite(pdiff); pdiff=_bg   # the gaps between the brown panels are the black lines
 pnrm=Image.open(glob.glob(f'{ATT}/30904468-image.png')[0]).convert('RGBA')
 TX['pld_diff']=add_texture('torsoattachment','pauldron_diff',texture_from_dds(bc7enc.dds(pdiff)))
 TX['pld_nrm']=add_texture('torsoattachment','pauldron_nrm',texture_from_dds(bc7enc.dds(pnrm)))
@@ -166,6 +174,7 @@ def patch(src,is_prefab):
     d=bytearray(open(src,'rb').read())
     S=Schema(bytes(d)); O,olo,olsz,tail=objtable(bytes(d),S)
     edits=[]   # (pos, old_len, new_bytes)
+    donor_paths=[]; DONOR_FILE=None
 
     def handle_at_path(path):
         """positions of resource handles whose path is `path` (u32 2, u8 1, id16, u32 len, path\\0)"""
@@ -291,6 +300,20 @@ def patch(src,is_prefab):
         assert kama_ent['o']<=q<kama_ent['end'], 'kama model used outside the kama entity'
         edits.append((q,handle_len(q),handle_bytes(f'chars/super_character/skinnedskirt/{KAMA}_dx11.ghg',bytes(d[q+5:q+21]))))
     print('kama model -> own copy')
+    # ---- the rifle painted black
+    for x in O:
+        if x['class']=='nttRenderTTExportObject' and x['path'] in ('Items/GRS1_SnareRifle','Items/GRS1_SnareRifle/Entity'):
+            for i,ce,ct,en,old in tintmod.tints(bytes(d),O,x):
+                if en: struct.pack_into('<3f',d,ct,*BLACK)
+    print('rifle painted black')
+    # ---- clone trooper voice, foley and body animations, taken from the Utapau clone
+    U=open(f'{DONOR_DIR}/CLONETROOPER_PHASE2_UTAPAU'+('.PREFAB_BAKED' if is_prefab else '_CHEAPMINIFIG.SCENE_BAKED'),'rb').read()
+    OU=objtable(U,Schema(U))[0]
+    swaps_=donorswap.sound_pairs(bytes(d),O,U,OU,skip=('Items',))+donorswap.anim_pairs(bytes(d),O,U,OU)
+    for p_,p2,a_,b_ in swaps_:
+        l2=5+16+4+struct.unpack_from('<I',U,p2+21)[0]
+        edits.append((p_,handle_len(p_),U[p2:p2+l2])); donor_paths.append(b_.lower())
+    print('clone sounds/animations swapped:',len(swaps_))
 
     # own name, ids and roster link
     n=selfpath_len(d); spath=bytes(d[22:22+n])
@@ -344,7 +367,16 @@ def patch(src,is_prefab):
     k_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_nxg.ghg']
     assert len(k_dx)==1 and len(k_nx)==1
     entries+= [(f'chars/super_character/skinnedskirt/{KAMA}_dx11.ghg',DH.recs[k_dx[0]]),(f'chars/super_character/skinnedskirt/{KAMA}_nxg.ghg',DH.recs[k_nx[0]])]
-    old_dx=old_dx+k_dx; old_nx=old_nx+k_nx   # the face model is no longer used; in torso mode the disabled face keeps its records
+    old_dx=old_dx+k_dx; old_nx=old_nx+k_nx
+    if donor_paths:
+        DU=Deps(U); have={DH.path(DH.rec(k)['node']).lower() for k in range(DH.nrec)}
+        byp={}
+        for k in range(DU.nrec): byp.setdefault(DU.path(DU.rec(k)['node']).lower(),[]).append(DU.recs[k])
+        added_=0
+        for pth in sorted(set(donor_paths)):
+            if pth in have: continue
+            for rec in byp.get(pth,[]): entries.append((pth,rec)); added_+=1
+        print('load list: donor records added',added_)   # the face model is no longer used; in torso mode the disabled face keeps its records
     out,added=depsmod.add_dependencies(bytes(d),entries)
     # drop the two original helmet records now that copies point at the new paths
     N=Deps(out); drop=set(old_dx+old_nx); keep=[k for k in range(N.nrec) if k not in drop]

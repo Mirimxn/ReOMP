@@ -36,7 +36,7 @@ def load_fbx_mesh(path):
         corners[c]=(pi,NI[c],(UI[c],UI1[c]),p,n,uv)
     return tris,corners,props,col
 
-def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,nxg_name,old_shader,old_nxg,mirror=False,double_sided=True):
+def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,nxg_name,old_shader,old_nxg,mirror=False,double_sided=True,flip_v=False,flip_normals=False):
     """mirror=True flips the model left to right (x) after placing it"""
     tris,corners,props,col=load_fbx_mesh(fbx_path)
     T=props['Lcl Translation']; S=props['Lcl Scaling']; Rd=props['Lcl Rotation']
@@ -48,7 +48,9 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
     if mirror: sx,tx,lx=-sx,-tx,-lx
     def xp(p): return (sx*p[0]+tx-lx, sy*p[1]+ty-ly, sz*p[2]+tz-lz)
     def xn(n):
-        v=(n[0]/sx,n[1]/sy,n[2]/sz); l=math.sqrt(sum(a*a for a in v)) or 1; return tuple(a/l for a in v)
+        v=(n[0]/sx,n[1]/sy,n[2]/sz); l=math.sqrt(sum(a*a for a in v)) or 1
+        if flip_normals: l=-l   # the user found the FBX normals point inwards
+        return tuple(a/l for a in v)
     flip=(sx*sy*sz)<0
     # dedupe vertices
     key2v={}; verts=[]; idx=[]
@@ -67,7 +69,7 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
         e1=[b[k]-a[k] for k in range(3)]; e2=[c[k]-a[k] for k in range(3)]
         g=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]]
         agree+=1 if sum(g[k]*n[k] for k in range(3))>0 else -1
-    if agree<0: idx=[x for i in range(0,len(idx),3) for x in (idx[i],idx[i+2],idx[i+1])]
+    if (agree<0) != flip_normals: idx=[x for i in range(0,len(idx),3) for x in (idx[i],idx[i+2],idx[i+1])]   # keep the geometric winding outward
     if double_sided:   # the FBX is a thin shell drawn without culling; the game culls back faces, so add the inside faces
         n0=len(verts); verts+= [(p,(-n[0],-n[1],-n[2]),uv) for p,n,uv in verts]
         idx+= [x+n0 for i in range(0,len(idx),3) for x in (idx[i],idx[i+2],idx[i+1])]
@@ -90,7 +92,8 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
                 elif name=='normal': assert typ==8; b[off:off+4]=bytes([mini(n[0]),mini(n[1]),mini(n[2]),255])
                 elif name=='colorSet0': b[off:off+4]=b'\xff\xff\xff\xff'
                 elif name=='tangent': b[off:off+4]=bytes(4)
-                elif name=='uvSet01': assert typ==6; struct.pack_into('<4e',b,off,uv[0],1-uv[1],uv[2],1-uv[3])   # FBX UV layers 0 and 1
+                elif name=='uvSet01':   # FBX UV layers 0 (normal map) and 1 (colour)
+                    assert typ==6; v0,v1=(1-uv[1],1-uv[3]) if flip_v else (uv[1],uv[3]); struct.pack_into('<4e',b,off,uv[0],v0,uv[2],v1)
                 elif name=='uvSet2': pass
                 else: raise SystemExit('unhandled vertex field '+name)
             out+=b
