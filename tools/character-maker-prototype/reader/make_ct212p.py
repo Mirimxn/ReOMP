@@ -247,12 +247,13 @@ def patch(src,is_prefab):
     set_tints(body,{1:SKIN,2:SKIN,3:WHITE,4:WHITE,5:WHITE,6:WHITE,7:BLACK,8:BLACK,9:WHITE,10:WHITE,11:WHITE})
     set_tints(render_of(lambda x: x['path']==hatent),{1:WHITE})
     kama=render_of(lambda x: x['path']=='SkinnedSkirt_Fabric')
-    set_tints(kama,{1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
+    set_tints(kama,{0:(1.0,1.0,1.0),1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
     print('colours: white body and helmet, black hands, tan head; kama untinted')
     DK=Dec(bytes(d)); DK.trace=[]; DK.mobj(R(bytes(d),kama['o']),struct.unpack_from('<I',d,kama['o']-4)[0]); assert not DK.bad
-    for sl in ('diffuse_0','diffuse_1'):
-        q=[q for n_,k_,q in DK.trace if n_==sl]; assert len(q)==2; q=q[1]
-        edits.append((q,handle_len(q),handle_bytes(TX['kama_diff'],NEW_TEX[TX['kama_diff']][1])))
+    # the kama model has two materials (TT0_Skirt_FabricKamaCloth, TT1_Breakup); give both the texture in every colour layer but weather (3)
+    for sl in ('diffuse_0','diffuse_1','diffuse_2'):
+        for q in [q for n_,k_,q in DK.trace if n_==sl]:
+            edits.append((q,handle_len(q),handle_bytes(TX['kama_diff'],NEW_TEX[TX['kama_diff']][1])))
 
     # own name, ids and roster link
     n=selfpath_len(d); spath=bytes(d[22:22+n])
