@@ -36,7 +36,7 @@ def load_fbx_mesh(path):
         corners[c]=(pi,NI[c],(UI[c],UI1[c]),p,n,uv)
     return tris,corners,props,col
 
-def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,nxg_name,old_shader,old_nxg,mirror=False):
+def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,nxg_name,old_shader,old_nxg,mirror=False,double_sided=True):
     """mirror=True flips the model left to right (x) after placing it"""
     tris,corners,props,col=load_fbx_mesh(fbx_path)
     T=props['Lcl Translation']; S=props['Lcl Scaling']; Rd=props['Lcl Rotation']
@@ -68,6 +68,9 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
         g=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]]
         agree+=1 if sum(g[k]*n[k] for k in range(3))>0 else -1
     if agree<0: idx=[x for i in range(0,len(idx),3) for x in (idx[i],idx[i+2],idx[i+1])]
+    if double_sided:   # the FBX is a thin shell drawn without culling; the game culls back faces, so add the inside faces
+        n0=len(verts); verts+= [(p,(-n[0],-n[1],-n[2]),uv) for p,n,uv in verts]
+        idx+= [x+n0 for i in range(0,len(idx),3) for x in (idx[i],idx[i+2],idx[i+1])]
     nv=len(verts); assert nv<65536
     mn=[min(v[0][k] for v in verts) for k in range(3)]; mx=[max(v[0][k] for v in verts) for k in range(3)]
     print(f'mesh: {len(tris)} triangles, {nv} vertices, winding agree score {agree}, flip {flip}')

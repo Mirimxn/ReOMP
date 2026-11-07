@@ -35,3 +35,12 @@ def rename(d,old,new,newid=True):
         if o<22+n: continue
         d[o:o+len(old)]=new.encode(); cnt+=1
     return bytes(d),cnt
+
+def entry_ids(d):
+    """positions of the 16-byte id of each listed texture (just before its u16 0x0001 + u16 name length + name)"""
+    import re
+    out=[]
+    for m in re.finditer(rb'\.nut\0',d):
+        e=m.end(); start=d.rfind(b'\x00\x01\x00',0,e-100)
+        out.append(m)
+    return out

@@ -146,6 +146,10 @@ blobs=nxgmod.dds_blobs(kn); p0,l0=blobs[0][0],blobs[0][1]
 from PIL import Image as _I
 _k=_I.open(att('KAMA_AIRBORN.dds')); _k.load()
 kn=kn[:p0]+nxgmod.dxt1_dds(_k,kn[p0:p0+128])+kn[p0+l0:]; nxgmod.dds_blobs(kn)
+# the white texture is shared by every character: give our entry its own id and name so the game does not reuse the cached white one
+kn=bytearray(kn); _w=bytes(kn).find(b'template/lego_white255.nut\0'); _s=bytes(kn).rfind(b'lego_models_extended',0,_w)
+assert _s>0 and kn[_s-5:_s-1]==b'\x00\x01\x00\x00'
+kn[_s-21:_s-5]=os.urandom(16); kn[_w+9:_w+22]=b'kamact212diff'; kn=bytes(kn)
 print('kama copy: names renamed',c1,c2,c3,'; white texture replaced by KAMA_AIRBORN',_k.size)
 for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
