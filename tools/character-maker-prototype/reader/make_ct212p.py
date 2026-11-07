@@ -98,17 +98,31 @@ for ext in ('NXG_TEXTURES','PC_SHADERS'):
 
 # ---------- pauldron: GSC built from the FBX, hung from the neck locator ----------
 NECK=(0.0,0.2891,0.0)
-PLD='pauldron_ct212'; PLD_DIR='chars/super_character/hat'   # the GSC's own header names this folder for its shader and texture lists
-pg,col=make_pauldron_gsc.build(f'{AIR}/SUPER_CHARACTER/HAT/HAT_CL2AB_OMP_AIRBORNE2_DX11.GSC',att('rigid_pauldron.fbx'),NECK,'Pauldron1',
-    f'{PLD_DIR.upper()}/{PLD.upper()}_DX11.GSC',f'{PLD}.shaders',f'{PLD}_dx11.nxg_textures','hat_cl2ab_omp_airborne2.shaders','hat_cl2ab_omp_airborne2_dx11.nxg_textures')
-resources.append(put(f'{PLD_DIR.upper()}/{PLD.upper()}_DX11.GSC',pg))
-for ext in ('NXG_TEXTURES','PC_SHADERS'):
-    x=bytearray(open(f'{AIR}/SUPER_CHARACTER/HAT/HAT_CL2AB_OMP_AIRBORNE2_DX11.{ext}','rb').read()); n=selfpath_len(x)
-    sp=f'{PLD_DIR.upper()}/{PLD.upper()}_DX11.{ext.lower()}'.encode(); assert len(sp)<n
-    x[22:22+n]=sp+bytes(n-len(sp)); i=22+n
-    while x[i]==0: i+=1
-    x[i:i+16]=os.urandom(16)
-    resources.append(put(f'{PLD_DIR.upper()}/{PLD.upper()}_DX11.{ext}',bytes(x)))
+PLD_DIR='chars/super_character/hat'   # the GSC's own header names this folder for its shader and texture lists
+SIDE=os.environ.get('PAULDRON_SIDE','left')   # which shoulder this character wears it on
+LIB='/mnt/user-data/outputs/parts/pauldron'   # both sides are kept here for other characters
+def build_side(side):
+    name=f'pauldron_{side[0]}'; iname='PauldronR' if side=='right' else 'PauldronL'
+    files={}
+    g,col=make_pauldron_gsc.build(f'{AIR}/SUPER_CHARACTER/HAT/HAT_CL2AB_OMP_AIRBORNE2_DX11.GSC',att('rigid_pauldron.fbx'),NECK,iname,
+        f'{PLD_DIR.upper()}/{name.upper()}_DX11.GSC',f'{name}.shaders',f'{name}_dx11.nxg_textures','hat_cl2ab_omp_airborne2.shaders','hat_cl2ab_omp_airborne2_dx11.nxg_textures',
+        mirror=(side=='left'))   # the FBX sits on the right shoulder (negative x, the RightHand side)
+    files[f'{PLD_DIR.upper()}/{name.upper()}_DX11.GSC']=g
+    for ext in ('NXG_TEXTURES','PC_SHADERS'):
+        x=bytearray(open(f'{AIR}/SUPER_CHARACTER/HAT/HAT_CL2AB_OMP_AIRBORNE2_DX11.{ext}','rb').read()); n=selfpath_len(x)
+        sp=f'{PLD_DIR.upper()}/{name.upper()}_DX11.{ext.lower()}'.encode(); assert len(sp)<n
+        x[22:22+n]=sp+bytes(n-len(sp)); i=22+n
+        while x[i]==0: i+=1
+        x[i:i+16]=os.urandom(16)
+        files[f'{PLD_DIR.upper()}/{name.upper()}_DX11.{ext}']=bytes(x)
+    for rel,data in files.items():
+        q=os.path.join(LIB,side,rel); os.makedirs(os.path.dirname(q),exist_ok=True); open(q,'wb').write(data)
+    return name,iname,files,col
+for sd in ('right','left'):
+    r_=build_side(sd)
+    if sd==SIDE: PLD,PLD_NAME,pfiles,col=r_
+for rel,data in pfiles.items(): resources.append(put(rel,data))
+print('this character wears the',SIDE,'pauldron:',PLD)
 def srgb(c): return round(255*(12.92*c if c<=0.0031308 else 1.055*c**(1/2.4)-0.055))
 RGB=tuple(srgb(c) for c in col); print('pauldron colour',RGB)
 def solid_bc7_dds(rgb,size=256):
@@ -122,7 +136,14 @@ def solid_bc7_dds(rgb,size=256):
     h=bytearray(148); h[0:4]=b'DDS '; struct.pack_into('<II',h,12,size,size); struct.pack_into('<I',h,28,mips)
     h[84:88]=b'DX10'; struct.pack_into('<I',h,128,98); return bytes(h)+pix
 TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
-TX['pld_diff']=add_texture('torsoattachment',f'{PLD}_diff',texture_from_dds(solid_bc7_dds(RGB)))
+sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
+from PIL import Image
+pdiff=Image.open(att('bc98a4b7-image.png'.split('-',1)[1]) if False else glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA'); pdiff.putalpha(255)
+pnrm=Image.open(glob.glob(f'{ATT}/30904468-image.png')[0]).convert('RGBA')
+TX['pld_diff']=add_texture('torsoattachment','pauldron_diff',texture_from_dds(bc7enc.dds(pdiff)))
+TX['pld_nrm']=add_texture('torsoattachment','pauldron_nrm',texture_from_dds(bc7enc.dds(pnrm)))
+for k in ('pld_diff','pld_nrm'):
+    rel=NEW_TEX[TX[k]][0]; q=os.path.join(LIB,'textures',rel); os.makedirs(os.path.dirname(q),exist_ok=True); open(q,'wb').write(open(os.path.join(OUT,rel),'rb').read())
 
 def patch(src,is_prefab):
     # ---------- the prefab ----------
@@ -190,7 +211,7 @@ def patch(src,is_prefab):
         def slot(name): s_=[p for n_,k_,p in D2.trace if n_==name]; assert len(s_)==2; return s_[1]
         for sl in ('diffuse_0','diffuse_1'):   # the helmet material this GSC was built from takes its colour from diffuse_1
             edits.append((slot(sl),handle_len(slot(sl)),handle_bytes(TX['pld_diff'],NEW_TEX[TX['pld_diff']][1])))
-        edits.append((slot('normal_0'),handle_len(slot('normal_0')),copy_handle('chars/super_character_texture/minifig/body_front_dx11_nrm.texture')))
+        edits.append((slot('normal_0'),handle_len(slot('normal_0')),handle_bytes(TX['pld_nrm'],NEW_TEX[TX['pld_nrm']][1])))
         edits.append((slot('specular_0'),handle_len(slot('specular_0')),copy_handle('chars/super_character_texture/minifig/body_front_dx11_brdf.texture')))
         return D2
     fm='chars/super_character/facetex/facetex_head_dx11.gsc'
@@ -229,7 +250,7 @@ def patch(src,is_prefab):
       D2=Dec(bytes(d)); D2.trace=[]; D2.mobj(R(bytes(d),rt['o']),struct.unpack_from('<I',d,rt['o']-4)[0]); assert not D2.bad
       sn=[p for n_,k_,p in D2.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]
       assert bytes(d[sn+4:sn+4+ln])==b'FaceTex_Head\0'
-      edits.append((sn,4+ln,struct.pack('<I',10)+b'Pauldron1\0'))
+      edits.append((sn,4+ln,struct.pack('<I',10)+PLD_NAME.encode()+b'\0'))
       set_material(rt)
 
     # ---- clone trooper colours: white plastic, black hands, tan head (values copied from CloneTrooper)
@@ -250,6 +271,8 @@ def patch(src,is_prefab):
     set_tints(kama,{0:(1.0,1.0,1.0),1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
     print('colours: white body and helmet, black hands, tan head; kama untinted')
     DK=Dec(bytes(d)); DK.trace=[]; DK.mobj(R(bytes(d),kama['o']),struct.unpack_from('<I',d,kama['o']-4)[0]); assert not DK.bad
+    q=[q for n_,k_,q in DK.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,q)[0]; assert ln==1, bytes(d[q:q+8])
+    edits.append((q,4+ln,struct.pack('<I',15)+b'[All Specials]\0')); print('kama special name -> [All Specials]')
     # the kama model has two materials (TT0_Skirt_FabricKamaCloth, TT1_Breakup); give both the texture in every colour layer but weather (3)
     for sl in ('diffuse_0','diffuse_1','diffuse_2'):
         for q in [q for n_,k_,q in DK.trace if n_==sl]:

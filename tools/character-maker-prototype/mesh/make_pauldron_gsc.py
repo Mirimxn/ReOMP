@@ -12,8 +12,10 @@ def load_fbx_mesh(path):
     props={p['props'][0]:p['props'][4:] for p in fbx.child(m,'Properties70')['kids']}
     V=fbx.child(g,'Vertices')['props'][0]; PVI=fbx.child(g,'PolygonVertexIndex')['props'][0]
     ln=fbx.child(g,'LayerElementNormal'); NR=fbx.child(ln,'Normals')['props'][0]; NI=fbx.child(ln,'NormalsIndex')['props'][0]
-    luv=[k for k in g['kids'] if k['name']=='LayerElementUV' and k['props'][0]==0][0]
-    UV=fbx.child(luv,'UV')['props'][0]; UI=fbx.child(luv,'UVIndex')['props'][0]
+    luvs=sorted([k for k in g['kids'] if k['name']=='LayerElementUV'],key=lambda k:k['props'][0])
+    UVS=[(fbx.child(l,'UV')['props'][0],fbx.child(l,'UVIndex')['props'][0]) for l in luvs]
+    if len(UVS)==1: UVS.append(UVS[0])
+    (UV,UI),(UV1,UI1)=UVS[0],UVS[1]
     mat=[o for o in obj['kids'] if o['name']=='Material']
     col=None
     if mat:
@@ -30,11 +32,12 @@ def load_fbx_mesh(path):
         i=PVI[c]; i=~i if i<0 else i; return tuple(V[3*i:3*i+3]),i
     corners={}
     for c in range(len(PVI)):
-        p,pi=pos(c); n=tuple(NR[3*NI[c]:3*NI[c]+3]); uv=tuple(UV[2*UI[c]:2*UI[c]+2])
-        corners[c]=(pi,NI[c],UI[c],p,n,uv)
+        p,pi=pos(c); n=tuple(NR[3*NI[c]:3*NI[c]+3]); uv=tuple(UV[2*UI[c]:2*UI[c]+2])+tuple(UV1[2*UI1[c]:2*UI1[c]+2])
+        corners[c]=(pi,NI[c],(UI[c],UI1[c]),p,n,uv)
     return tris,corners,props,col
 
-def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,nxg_name,old_shader,old_nxg):
+def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,nxg_name,old_shader,old_nxg,mirror=False):
+    """mirror=True flips the model left to right (x) after placing it"""
     tris,corners,props,col=load_fbx_mesh(fbx_path)
     T=props['Lcl Translation']; S=props['Lcl Scaling']; Rd=props['Lcl Rotation']
     assert abs(abs(Rd[0])-180)<1e-3 and abs(Rd[1])<1e-3 and abs(Rd[2])<1e-3, Rd
@@ -42,6 +45,7 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
     sx,sy,sz=S[0]/UNIT,-S[1]/UNIT,-S[2]/UNIT          # scale, then 180 deg about X flips y and z
     tx,ty,tz=T[0]/UNIT,T[1]/UNIT,T[2]/UNIT
     lx,ly,lz=locator_pos
+    if mirror: sx,tx,lx=-sx,-tx,-lx
     def xp(p): return (sx*p[0]+tx-lx, sy*p[1]+ty-ly, sz*p[2]+tz-lz)
     def xn(n):
         v=(n[0]/sx,n[1]/sy,n[2]/sz); l=math.sqrt(sum(a*a for a in v)) or 1; return tuple(a/l for a in v)
@@ -83,7 +87,7 @@ def build(template_gsc,fbx_path,locator_pos,internal_name,self_path,shader_name,
                 elif name=='normal': assert typ==8; b[off:off+4]=bytes([mini(n[0]),mini(n[1]),mini(n[2]),255])
                 elif name=='colorSet0': b[off:off+4]=b'\xff\xff\xff\xff'
                 elif name=='tangent': b[off:off+4]=bytes(4)
-                elif name=='uvSet01': assert typ==6; struct.pack_into('<4e',b,off,uv[0],1-uv[1],uv[0],1-uv[1])
+                elif name=='uvSet01': assert typ==6; struct.pack_into('<4e',b,off,uv[0],1-uv[1],uv[2],1-uv[3])   # FBX UV layers 0 and 1
                 elif name=='uvSet2': pass
                 else: raise SystemExit('unhandled vertex field '+name)
             out+=b
