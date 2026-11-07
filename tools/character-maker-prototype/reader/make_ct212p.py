@@ -7,6 +7,7 @@ from schema import Schema,R,find_rec
 from objtree import objtable
 from dec2 import Dec
 from deps import Deps
+import tints as tintmod
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd')
 import make_pauldron_gsc
 
@@ -120,6 +121,7 @@ def solid_bc7_dds(rgb,size=256):
     for m in range(mips): s_=max(1,size>>m); pix+=blk*(max(1,s_//4)**2)
     h=bytearray(148); h[0:4]=b'DDS '; struct.pack_into('<II',h,12,size,size); struct.pack_into('<I',h,28,mips)
     h[84:88]=b'DX10'; struct.pack_into('<I',h,128,98); return bytes(h)+pix
+TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
 TX['pld_diff']=add_texture('torsoattachment',f'{PLD}_diff',texture_from_dds(solid_bc7_dds(RGB)))
 
 def patch(src,is_prefab):
@@ -229,6 +231,28 @@ def patch(src,is_prefab):
       assert bytes(d[sn+4:sn+4+ln])==b'FaceTex_Head\0'
       edits.append((sn,4+ln,struct.pack('<I',10)+b'Pauldron1\0'))
       set_material(rt)
+
+    # ---- clone trooper colours: white plastic, black hands, tan head (values copied from CloneTrooper)
+    WHITE=(0.957,0.957,0.957); SKIN=(0.776,0.435,0.29); BLACK=(0.067,0.067,0.067)
+    def render_of(pred):
+        r=[x for x in O if x['class']=='nttRenderTTExportObject' and pred(x)]; assert len(r)==1,len(r); return r[0]
+    def set_tints(rt,colours):
+        for i,ce,ct,en,old in tintmod.tints(bytes(d),O,rt):
+            if i in colours:
+                d[ce]=1; struct.pack_into('<3f',d,ct,*colours[i])
+    def model_of(x):
+        D3=Dec(bytes(d)); D3.trace=[]; D3.mobj(R(bytes(d),x['o']),struct.unpack_from('<I',d,x['o']-4)[0])
+        q=[q for n_,k_,q in D3.trace if n_=='Model Resource' and d[q+4]]; return bytes(d[q[0]+25:q[0]+25+struct.unpack_from('<I',d,q[0]+21)[0]-1]).decode() if q else ''
+    body=render_of(lambda x: x['path']=='' and model_of(x).endswith('super_minifig_dx11.ghg'))
+    set_tints(body,{1:SKIN,2:SKIN,3:WHITE,4:WHITE,5:WHITE,6:WHITE,7:BLACK,8:BLACK,9:WHITE,10:WHITE,11:WHITE})
+    set_tints(render_of(lambda x: x['path']==hatent),{1:WHITE})
+    kama=render_of(lambda x: x['path']=='SkinnedSkirt_Fabric')
+    set_tints(kama,{1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
+    print('colours: white body and helmet, black hands, tan head; kama untinted')
+    DK=Dec(bytes(d)); DK.trace=[]; DK.mobj(R(bytes(d),kama['o']),struct.unpack_from('<I',d,kama['o']-4)[0]); assert not DK.bad
+    for sl in ('diffuse_0','diffuse_1'):
+        q=[q for n_,k_,q in DK.trace if n_==sl]; assert len(q)==2; q=q[1]
+        edits.append((q,handle_len(q),handle_bytes(TX['kama_diff'],NEW_TEX[TX['kama_diff']][1])))
 
     # own name, ids and roster link
     n=selfpath_len(d); spath=bytes(d[22:22+n])
