@@ -14,6 +14,7 @@ ATT='/mnt/user-data/attachments/5d780e1f-0614-5cb0-8420-7e2215cd16ae'
 T212='/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/ct212/212_trooper/CHARS'
 AIR='/mnt/user-data/outputs/airborne8/CHARS'
 OUT=sys.argv[1]
+SLOT=sys.argv[2] if len(sys.argv)>2 else 'face'   # which template slot hosts the pauldron: 'face' or 'torso'
 def att(name): return glob.glob(f'{ATT}/*-{name}')[0]
 def put(rel,data):
     p=os.path.join(OUT,rel); os.makedirs(os.path.dirname(p),exist_ok=True); open(p,'wb').write(data); return rel
@@ -96,7 +97,7 @@ for ext in ('NXG_TEXTURES','PC_SHADERS'):
 
 # ---------- pauldron: GSC built from the FBX, hung from the neck locator ----------
 NECK=(0.0,0.2891,0.0)
-PLD='pauldron_ct212'; PLD_DIR='chars/super_character/torsoattachment'
+PLD='pauldron_ct212'; PLD_DIR='chars/super_character/hat'   # the GSC's own header names this folder for its shader and texture lists
 pg,col=make_pauldron_gsc.build(f'{AIR}/SUPER_CHARACTER/HAT/HAT_CL2AB_OMP_AIRBORNE2_DX11.GSC',att('rigid_pauldron.fbx'),NECK,'Pauldron1',
     f'{PLD_DIR.upper()}/{PLD.upper()}_DX11.GSC',f'{PLD}.shaders',f'{PLD}_dx11.nxg_textures','hat_cl2ab_omp_airborne2.shaders','hat_cl2ab_omp_airborne2_dx11.nxg_textures')
 resources.append(put(f'{PLD_DIR.upper()}/{PLD.upper()}_DX11.GSC',pg))
@@ -174,40 +175,60 @@ def patch(src,is_prefab):
     for k in (9,9+12):   # pos.y in local NuTransform (floats 8..11) and world NuTransform
         y=struct.unpack_from('<f',d,p+4*k)[0]; struct.pack_into('<f',d,p+4*k,0.3742397129535675); print('helmet y',y,'->',struct.unpack_from('<f',d,p+4*k)[0])
     # disable the extra model and the face texture (entity and its components)
-    for ent in ('AdditionalModel_CaribDiss',):
+    for ent in (('AdditionalModel_CaribDiss',) if SLOT=='face' else ('FaceTex_CaribDiss',)):
         for x in O:
             if (x['class']=='apiEntity' and x['entity']==ent and x['path']=='') or x['path']==ent or x['path'].startswith(ent+'/'):
                 if x['class'] in ('apiEntity',) or S.classes[struct.unpack_from('<I',d,x['o']-4)[0]]['fields'][:1] and D.is_comp(struct.unpack_from('<I',d,x['o']-4)[0]):
                     assert d[x['o']+17] in (0,1); d[x['o']+17]=0
         print('disabled',ent)
-    # ---- the face-texture slot becomes the pauldron
-    fent='FaceTex_CaribDiss'
-    for x in O:
-        if x['path']==fent and x['class']=='AnimBlendTreeComponent':
-            assert d[x['o']+17]==1; d[x['o']+17]=0; print('face animation disabled')
-    at=[x for x in O if x['path']==fent and x['class']=='AttachToLocatorComponent'][0]
-    k=bytes(d).find(b'\x0d\x00\x00\x00Face_Locator\x00',at['o'],at['end']); assert k>0
-    d[k+4:k+16]=b'Neck_Locator'; print('pauldron hangs from Neck_Locator')
-    tr=[x for x in O if x['path']==fent and x['class']=='apiTransformComponent'][0]
-    p=tr['o']+17+19
-    for k in (8,8+12):
-        struct.pack_into('<3f',d,p+4*k,*NECK)
-    print('pauldron entity at',NECK)
-    fm='chars/super_character/facetex/facetex_head_dx11.gsc'
-    p=handle_at_path(fm); assert len(p)==1,p; p=p[0]; fid=bytes(d[p+5:p+21])
-    edits.append((p,handle_len(p),handle_bytes(f'{PLD_DIR}/{PLD}_dx11.gsc',fid)))
-    rt=[x for x in O if x['path']==fent and x['class']=='nttRenderTTExportObject'][0]
-    D2=Dec(bytes(d)); D2.trace=[]; D2.mobj(R(bytes(d),rt['o']),struct.unpack_from('<I',d,rt['o']-4)[0]); assert not D2.bad
-    sn=[p for n_,k_,p in D2.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]
-    assert bytes(d[sn+4:sn+4+ln])==b'FaceTex_Head\0'
-    edits.append((sn,4+ln,struct.pack('<I',10)+b'Pauldron1\0'))
-    def slot(name): s_=[p for n_,k_,p in D2.trace if n_==name]; assert len(s_)==2; return s_[1]
     def copy_handle(path):
         q=handle_at_path(path)[0]; return bytes(d[q:q+handle_len(q)])
-    for sl in ('diffuse_0','diffuse_1'):   # the helmet material this GSC was built from takes its colour from diffuse_1
-        edits.append((slot(sl),handle_len(slot(sl)),handle_bytes(TX['pld_diff'],NEW_TEX[TX['pld_diff']][1])))
-    edits.append((slot('normal_0'),handle_len(slot('normal_0')),copy_handle('chars/super_character_texture/minifig/body_front_dx11_nrm.texture')))
-    edits.append((slot('specular_0'),handle_len(slot('specular_0')),copy_handle('chars/super_character_texture/minifig/body_front_dx11_brdf.texture')))
+    def set_material(rt):
+        D2=Dec(bytes(d)); D2.trace=[]; D2.mobj(R(bytes(d),rt['o']),struct.unpack_from('<I',d,rt['o']-4)[0]); assert not D2.bad
+        def slot(name): s_=[p for n_,k_,p in D2.trace if n_==name]; assert len(s_)==2; return s_[1]
+        for sl in ('diffuse_0','diffuse_1'):   # the helmet material this GSC was built from takes its colour from diffuse_1
+            edits.append((slot(sl),handle_len(slot(sl)),handle_bytes(TX['pld_diff'],NEW_TEX[TX['pld_diff']][1])))
+        edits.append((slot('normal_0'),handle_len(slot('normal_0')),copy_handle('chars/super_character_texture/minifig/body_front_dx11_nrm.texture')))
+        edits.append((slot('specular_0'),handle_len(slot('specular_0')),copy_handle('chars/super_character_texture/minifig/body_front_dx11_brdf.texture')))
+        return D2
+    fm='chars/super_character/facetex/facetex_head_dx11.gsc'
+    p=handle_at_path(fm); assert len(p)==1,p; fid=bytes(d[p[0]+5:p[0]+21])
+    if SLOT=='torso':
+        # ---- the torso-attachment slot (skinned GHG on the Neck joint) gets the rigid pauldron GSC
+        tent='AdditionalModel_CaribDiss'
+        for x in O:
+            if x['path']==tent and x['class']=='SkeletonComponent':
+                assert d[x['o']+17]==1; d[x['o']+17]=0; print('torso slot skeleton disabled (the GSC has no skin)')
+        ao=[x for x in O if x['path']==tent and x['class']=='AttachmentOffsetComponent'][0]
+        DA=Dec(bytes(d)); DA.trace=[]; DA.mobj(R(bytes(d),ao['o']),struct.unpack_from('<I',d,ao['o']-4)[0])
+        op=[p for n_,k_,p in DA.trace if n_=='Offset'][0]; print('torso offset',struct.unpack_from('<3f',d,op),'-> 0'); struct.pack_into('<3f',d,op,0,0,0)
+        rt=[x for x in O if x['path']==tent and x['class']=='nttRenderTTExportObject'][0]
+        gm='chars/super_character/additionalmodel/additionalmodel_caribdiss_dx11.ghg'
+        p=[q for q in handle_at_path(gm) if rt['o']<=q<rt['end']]; assert len(p)==1; p=p[0]
+        edits.append((p,handle_len(p),handle_bytes(f'{PLD_DIR}/{PLD}_dx11.gsc',fid)))
+        D2=set_material(rt)
+        sn=[p for n_,k_,p in D2.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]; print('torso special name',bytes(d[sn+4:sn+4+ln]))
+    if SLOT=='face':
+      fent='FaceTex_CaribDiss'
+      for x in O:
+          if x['path']==fent and x['class']=='AnimBlendTreeComponent':
+              assert d[x['o']+17]==1; d[x['o']+17]=0; print('face animation disabled')
+      at=[x for x in O if x['path']==fent and x['class']=='AttachToLocatorComponent'][0]
+      k=bytes(d).find(b'\x0d\x00\x00\x00Face_Locator\x00',at['o'],at['end']); assert k>0
+      d[k+4:k+16]=b'Neck_Locator'; print('pauldron hangs from Neck_Locator')
+      tr=[x for x in O if x['path']==fent and x['class']=='apiTransformComponent'][0]
+      p=tr['o']+17+19
+      for k in (8,8+12):
+          struct.pack_into('<3f',d,p+4*k,*NECK)
+      print('pauldron entity at',NECK)
+      p=handle_at_path(fm)[0]
+      edits.append((p,handle_len(p),handle_bytes(f'{PLD_DIR}/{PLD}_dx11.gsc',fid)))
+      rt=[x for x in O if x['path']==fent and x['class']=='nttRenderTTExportObject'][0]
+      D2=Dec(bytes(d)); D2.trace=[]; D2.mobj(R(bytes(d),rt['o']),struct.unpack_from('<I',d,rt['o']-4)[0]); assert not D2.bad
+      sn=[p for n_,k_,p in D2.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]
+      assert bytes(d[sn+4:sn+4+ln])==b'FaceTex_Head\0'
+      edits.append((sn,4+ln,struct.pack('<I',10)+b'Pauldron1\0'))
+      set_material(rt)
 
     # own name, ids and roster link
     n=selfpath_len(d); spath=bytes(d[22:22+n])
@@ -256,7 +277,7 @@ def patch(src,is_prefab):
     f_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/facetex/facetex_head_nxg.gsc']
     assert len(f_dx)==1 and len(f_nx)==1
     entries+= [(f'{PLD_DIR}/{PLD}_dx11.gsc',DH.recs[f_dx[0]]),(f'{PLD_DIR}/{PLD}_nxg.gsc',DH.recs[f_nx[0]])]
-    old_dx=old_dx+f_dx; old_nx=old_nx+f_nx
+    if SLOT=='face': old_dx=old_dx+f_dx; old_nx=old_nx+f_nx   # the face model is no longer used; in torso mode the disabled face keeps its records
     out,added=depsmod.add_dependencies(bytes(d),entries)
     # drop the two original helmet records now that copies point at the new paths
     N=Deps(out); drop=set(old_dx+old_nx); keep=[k for k in range(N.nrec) if k not in drop]

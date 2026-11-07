@@ -110,3 +110,5 @@ The game only loads files that are on this list: the kama's objects without its 
 - The model's internal name sits in the fixed-size NTBL after `default_string`; the prefab's Special Name must match it.
 - The user's Blender scene is at 100x game size: FBX cm / 10000 = game units (the neck locator is at y 0.2891 and the FBX object at 2900 cm).
 - The FaceTex slot (rigid GSC on `AttachToLocatorComponent`, locator name string) can host a rigid model: change `Face_Locator` to another skeleton locator (`Neck_Locator`, `Spine_Locator`, `Backpack_Locator`), disable its AnimBlendTree, swap the model, the Special Name and the material overrides.
+- A GSC's header names its folder (`chars/super_character/hat/`) and the game looks for its `.pc_shaders` and `.nxg_textures` there, whatever folder the GSC itself is served from. A GSC copied from a hat must stay in the hat folder, or it never loads (the log shows thousands of requests for it).
+- Two characters with the same `previewBase` share one preview slot, and the first one wins. Give each character its own base.
