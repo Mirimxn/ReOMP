@@ -135,7 +135,19 @@ def solid_bc7_dds(rgb,size=256):
     for m in range(mips): s_=max(1,size>>m); pix+=blk*(max(1,s_//4)**2)
     h=bytearray(148); h[0:4]=b'DDS '; struct.pack_into('<II',h,12,size,size); struct.pack_into('<I',h,28,mips)
     h[84:88]=b'DX10'; struct.pack_into('<I',h,128,98); return bytes(h)+pix
-TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
+# ---------- kama: its material only uses the small textures embedded in its own texture list, so the
+# kama model gets its own copy with the user's texture embedded in place of the white one
+import nxg as nxgmod
+KAMA_OLD='skinnedskirt_fabric_kamacloth'; KAMA='skinnedskirt_fabric_kamact212'; KDIR='CHARS/SUPER_CHARACTER/SKINNEDSKIRT'
+kg,c1=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),KAMA_OLD,KAMA)
+ks,c2=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.PC_SHADERS'),'rb').read(),KAMA_OLD,KAMA)
+kn,c3=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.NXG_TEXTURES'),'rb').read(),KAMA_OLD,KAMA)
+blobs=nxgmod.dds_blobs(kn); p0,l0=blobs[0][0],blobs[0][1]
+from PIL import Image as _I
+_k=_I.open(att('KAMA_AIRBORN.dds')); _k.load()
+kn=kn[:p0]+nxgmod.dxt1_dds(_k,kn[p0:p0+128])+kn[p0+l0:]; nxgmod.dds_blobs(kn)
+print('kama copy: names renamed',c1,c2,c3,'; white texture replaced by KAMA_AIRBORN',_k.size)
+for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
 from PIL import Image
 pdiff=Image.open(att('bc98a4b7-image.png'.split('-',1)[1]) if False else glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA'); pdiff.putalpha(255)
@@ -268,15 +280,13 @@ def patch(src,is_prefab):
     set_tints(body,{1:SKIN,2:SKIN,3:WHITE,4:WHITE,5:WHITE,6:WHITE,7:BLACK,8:BLACK,9:WHITE,10:WHITE,11:WHITE})
     set_tints(render_of(lambda x: x['path']==hatent),{1:WHITE})
     kama=render_of(lambda x: x['path']=='SkinnedSkirt_Fabric')
+    kama_ent=[x for x in O if x['class']=='apiEntity' and x['entity']=='SkinnedSkirt_Fabric' and x['path']==''][0]
     set_tints(kama,{0:(1.0,1.0,1.0),1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
     print('colours: white body and helmet, black hands, tan head; kama untinted')
-    DK=Dec(bytes(d)); DK.trace=[]; DK.mobj(R(bytes(d),kama['o']),struct.unpack_from('<I',d,kama['o']-4)[0]); assert not DK.bad
-    q=[q for n_,k_,q in DK.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,q)[0]; assert ln==1, bytes(d[q:q+8])
-    edits.append((q,4+ln,struct.pack('<I',15)+b'[All Specials]\0')); print('kama special name -> [All Specials]')
-    # the kama model has two materials (TT0_Skirt_FabricKamaCloth, TT1_Breakup); give both the texture in every colour layer but weather (3)
-    for sl in ('diffuse_0','diffuse_1','diffuse_2'):
-        for q in [q for n_,k_,q in DK.trace if n_==sl]:
-            edits.append((q,handle_len(q),handle_bytes(TX['kama_diff'],NEW_TEX[TX['kama_diff']][1])))
+    for q in handle_at_path(f'chars/super_character/skinnedskirt/{KAMA_OLD}_dx11.ghg'):
+        assert kama_ent['o']<=q<kama_ent['end'], 'kama model used outside the kama entity'
+        edits.append((q,handle_len(q),handle_bytes(f'chars/super_character/skinnedskirt/{KAMA}_dx11.ghg',bytes(d[q+5:q+21]))))
+    print('kama model -> own copy')
 
     # own name, ids and roster link
     n=selfpath_len(d); spath=bytes(d[22:22+n])
@@ -325,7 +335,12 @@ def patch(src,is_prefab):
     f_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/facetex/facetex_head_nxg.gsc']
     assert len(f_dx)==1 and len(f_nx)==1
     entries+= [(f'{PLD_DIR}/{PLD}_dx11.gsc',DH.recs[f_dx[0]]),(f'{PLD_DIR}/{PLD}_nxg.gsc',DH.recs[f_nx[0]])]
-    if SLOT=='face': old_dx=old_dx+f_dx; old_nx=old_nx+f_nx   # the face model is no longer used; in torso mode the disabled face keeps its records
+    if SLOT=='face': old_dx=old_dx+f_dx; old_nx=old_nx+f_nx
+    k_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_dx11.ghg']
+    k_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_nxg.ghg']
+    assert len(k_dx)==1 and len(k_nx)==1
+    entries+= [(f'chars/super_character/skinnedskirt/{KAMA}_dx11.ghg',DH.recs[k_dx[0]]),(f'chars/super_character/skinnedskirt/{KAMA}_nxg.ghg',DH.recs[k_nx[0]])]
+    old_dx=old_dx+k_dx; old_nx=old_nx+k_nx   # the face model is no longer used; in torso mode the disabled face keeps its records
     out,added=depsmod.add_dependencies(bytes(d),entries)
     # drop the two original helmet records now that copies point at the new paths
     N=Deps(out); drop=set(old_dx+old_nx); keep=[k for k in range(N.nrec) if k not in drop]
