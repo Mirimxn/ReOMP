@@ -152,7 +152,10 @@ kn=kn[:p0]+nxgmod.dxt1_dds(_k,kn[p0:p0+128])+kn[p0+l0:]; nxgmod.dds_blobs(kn)
 kn=bytearray(kn); _w=bytes(kn).find(b'template/lego_white255.nut\0'); _s=bytes(kn).rfind(b'lego_models_extended',0,_w)
 assert _s>0 and kn[_s-5:_s-1]==b'\x00\x01\x00\x00'
 _old_id=bytes(kn[_s-21:_s-5]); _new_id=os.urandom(16)
-kn[_s-21:_s-5]=_new_id; kn[_w+9:_w+22]=b'kamact212diff'; kn=bytes(kn)
+kn[_s-21:_s-5]=_new_id; kn[_w+9:_w+22]=b'kamact212diff'
+# after each name: u32, then a texture kind byte. Template placeholders are 04; the gunship's real albedo/decals are 0b
+_e=_w+len(b'template/lego_white255.nut\0'); assert kn[_e:_e+9]==bytes.fromhex('000000000400010002'), kn[_e:_e+9].hex()
+kn[_e+4]=0x0b; kn=bytes(kn)
 # the model's material names its textures by id and name: point it at the new entry
 _n_id=kg.count(_old_id); _n_nm=kg.count(b'template/lego_white255.nut\0')
 kg=kg.replace(_old_id,_new_id).replace(b'template/lego_white255.nut\0',b'template/kamact212diff.nut\0')
