@@ -137,27 +137,18 @@ def solid_bc7_dds(rgb,size=256):
     for m in range(mips): s_=max(1,size>>m); pix+=blk*(max(1,s_//4)**2)
     h=bytearray(148); h[0:4]=b'DDS '; struct.pack_into('<II',h,12,size,size); struct.pack_into('<I',h,28,mips)
     h[84:88]=b'DX10'; struct.pack_into('<I',h,128,98); return bytes(h)+pix
-# ---------- kama: its material has only the plain plastic layer. Leia's Ewok Village skinned skirt has the
-# same vertex layout and a second (printable) colour layer, so the kama copy gets Leia's materials, shaders
-# and texture list; the print itself is set in the prefab as diffuse_1, like the helmet and Palpatine's cape.
-import nxg as nxgmod
+# ---------- kama: its own material has only the plain plastic layer. The game's skirt attachment is the same
+# old file format, also skinned, and its front material has a printable second layer (fed by diffuse_1 in the
+# prefab, like the helmet). The kama keeps its mesh, bones and LODs and gets the skirt's materials and shaders.
+import nxg as nxgmod, kama_skirtmat
 KAMA_OLD='skinnedskirt_fabric_kamacloth'; KAMA='skinnedskirt_fabric_kamact212'; KDIR='CHARS/SUPER_CHARACTER/SKINNEDSKIRT'
-LEIA=glob.glob('/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_LEIA_EWOK_VILLAGE_INGAME_DX11.')[0] if False else '/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_LEIA_EWOK_VILLAGE_INGAME_DX11.'
-# Leia's file is the host: her materials, shaders, texture list and skeleton (same bones as the kama), with
-# the kama's mesh put in (skinned and posed LOD0 lists, the shared index list, part infos)
-import ghg_mesh_swap
-lg=open(LEIA+'GHG','rb').read()
-kg=ghg_mesh_swap.swap(lg,open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),{4:4,8:11},5,[0,2])
-def _selfpath(d,new):
-    # the self path is stored with its exact length (incl. NUL); padding a shorter path makes the game
-    # look for the file under a different name and request it forever
-    h=struct.unpack('>I',d[:4])[0]; n=struct.unpack('>H',d[20:22])[0]; sp=new.encode()+b'\0'
-    body=d[4:20]+struct.pack('>H',len(sp))+sp+os.urandom(16)+d[22+n+16:4+h]
-    return struct.pack('>I',len(body))+body+d[4+h:]
-kg=_selfpath(kg,f'Chars/Super_Character/SkinnedSkirt/{KAMA.upper()}_DX11.GHG')
-print('kama copy: kama mesh inside Leia Ewok Village skirt file',len(kg))
+SKIRT='/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKIRT_ATTACHMENT/SKIRT_ATTACHMENT_DX11.'
+kg,_=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),KAMA_OLD,KAMA)
+kg=kama_skirtmat.build(kg,open(SKIRT+'GHG','rb').read())
+ks=kama_skirtmat.selfpath(open(SKIRT+'PC_SHADERS','rb').read(),f'{KDIR}/{KAMA.upper()}_DX11.pc_shaders')
+kn=kama_skirtmat.selfpath(open(SKIRT+'NXG_TEXTURES','rb').read(),f'{KDIR}/{KAMA.upper()}_DX11.nxg_textures')
+for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
 TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
-resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.GHG',kg))   # shaders and texture list: Leia's, from the game
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
 from PIL import Image
 pdiff=Image.open(glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA')
