@@ -147,7 +147,22 @@ kg,c1=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').rea
 lg=open(LEIA+'GHG','rb').read()
 def _chunk(d,tag,end_tag): s_=d.find(tag+b'\x00\x00'); e_=d.find(end_tag+b'\x00\x00\x00',s_); assert 0<s_<e_; return s_,e_
 _ks,_ke=_chunk(kg,b'LTMU',b'SUPC'); _ls,_le=_chunk(lg,b'LTMU',b'SUPC')
-kg=kg[:_ks]+lg[_ls:_le]+kg[_ke:]
+# the section numbers its objects (DXTV vertex layouts) after the mesh's objects, and refers back to them as
+# c0 00 xx xx: renumber Leia's from her first material object to the kama's
+def _refs(d,a_,b_):
+    out=[]; i=a_
+    while True:
+        i=d.find(b'\xc0\x00',i,b_)
+        if i<0: return out
+        out.append((i,struct.unpack('>H',d[i+2:i+4])[0])); i+=2
+def _first_obj(d,s_,e_):
+    v=[x for _,x in _refs(d,s_,e_) if x<1000]; return min(v)
+_kf=_first_obj(kg,_ks,_ke); _lf=_first_obj(lg,_ls,_le); _off=_kf-_lf
+_lt=bytearray(lg[_ls:_le]); _n=0
+for i,v in _refs(lg,_ls,_le):
+    if _lf<=v<1000: struct.pack_into('>H',_lt,i-_ls+2,v+_off); _n+=1
+print(f'kama materials: object numbers {_lf}.. -> {_kf}.. ({_n} references renumbered)')
+kg=kg[:_ks]+bytes(_lt)+kg[_ke:]
 _h=struct.unpack('>I',kg[:4])[0]; kg=kg[:_h+4]+struct.pack('>I',len(kg)-_h-8)+kg[_h+8:]
 print(f'kama materials: {struct.unpack(">I",lg[_ls+8:_ls+12])[0]} from Leia (was 4), {_le-_ls} bytes')
 def _selfpath(d,new):
