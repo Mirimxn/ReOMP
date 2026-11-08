@@ -148,9 +148,11 @@ kg=kama_skirtmat.build(kg,open(SKIRT+'GHG','rb').read())
 ks=kama_skirtmat.selfpath(open(SKIRT+'PC_SHADERS','rb').read(),f'{KDIR}/{KAMA.upper()}_DX11.pc_shaders')
 kn=kama_skirtmat.selfpath(open(SKIRT+'NXG_TEXTURES','rb').read(),f'{KDIR}/{KAMA.upper()}_DX11.nxg_textures')
 for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
-TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
 from PIL import Image
+# the skirt material reads uvSet2 upside down compared with the kama's own UVs: flip the print vertically
+_kimg=Image.open(att('KAMA_AIRBORN.dds')).convert('RGBA').transpose(Image.FLIP_TOP_BOTTOM)
+TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(bc7enc.dds(_kimg)))
 pdiff=Image.open(glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA')
 _bg=Image.new('RGBA',pdiff.size,(0,0,0,255)); _bg.alpha_composite(pdiff); pdiff=_bg   # the gaps between the brown panels are the black lines
 pnrm=Image.open(glob.glob(f'{ATT}/30904468-image.png')[0]).convert('RGBA')
