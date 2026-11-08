@@ -149,10 +149,11 @@ import ghg_mesh_swap
 lg=open(LEIA+'GHG','rb').read()
 kg=ghg_mesh_swap.swap(lg,open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),{4:4,8:11},5,[0,2])
 def _selfpath(d,new):
-    d=bytearray(d); n=struct.unpack('>H',d[20:22])[0]; sp=new.encode(); assert len(sp)<n,(new,n)
-    d[22:22+n]=sp+bytes(n-len(sp)); k=22+n
-    while d[k]==0: k+=1
-    d[k:k+16]=os.urandom(16); return bytes(d)
+    # the self path is stored with its exact length (incl. NUL); padding a shorter path makes the game
+    # look for the file under a different name and request it forever
+    h=struct.unpack('>I',d[:4])[0]; n=struct.unpack('>H',d[20:22])[0]; sp=new.encode()+b'\0'
+    body=d[4:20]+struct.pack('>H',len(sp))+sp+os.urandom(16)+d[22+n+16:4+h]
+    return struct.pack('>I',len(body))+body+d[4+h:]
 kg=_selfpath(kg,f'Chars/Super_Character/SkinnedSkirt/{KAMA.upper()}_DX11.GHG')
 print('kama copy: kama mesh inside Leia Ewok Village skirt file',len(kg))
 TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
