@@ -137,30 +137,28 @@ def solid_bc7_dds(rgb,size=256):
     for m in range(mips): s_=max(1,size>>m); pix+=blk*(max(1,s_//4)**2)
     h=bytearray(148); h[0:4]=b'DDS '; struct.pack_into('<II',h,12,size,size); struct.pack_into('<I',h,28,mips)
     h[84:88]=b'DX10'; struct.pack_into('<I',h,128,98); return bytes(h)+pix
-# ---------- kama: its material only uses the small textures embedded in its own texture list, so the
-# kama model gets its own copy with the user's texture embedded in place of the white one
+# ---------- kama: its material has only the plain plastic layer. Leia's Ewok Village skinned skirt has the
+# same vertex layout and a second (printable) colour layer, so the kama copy gets Leia's materials, shaders
+# and texture list; the print itself is set in the prefab as diffuse_1, like the helmet and Palpatine's cape.
 import nxg as nxgmod
 KAMA_OLD='skinnedskirt_fabric_kamacloth'; KAMA='skinnedskirt_fabric_kamact212'; KDIR='CHARS/SUPER_CHARACTER/SKINNEDSKIRT'
+LEIA=glob.glob('/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_LEIA_EWOK_VILLAGE_INGAME_DX11.')[0] if False else '/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_LEIA_EWOK_VILLAGE_INGAME_DX11.'
 kg,c1=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),KAMA_OLD,KAMA)
-ks,c2=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.PC_SHADERS'),'rb').read(),KAMA_OLD,KAMA)
-kn,c3=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.NXG_TEXTURES'),'rb').read(),KAMA_OLD,KAMA)
-blobs=nxgmod.dds_blobs(kn); p0,l0=blobs[0][0],blobs[0][1]
-from PIL import Image as _I
-_k=_I.open(att('KAMA_AIRBORN.dds')); _k.load()
-kn=kn[:p0]+nxgmod.dxt1_dds(_k,kn[p0:p0+128])+kn[p0+l0:]; nxgmod.dds_blobs(kn)
-# the white texture is shared by every character: give our entry its own id and name so the game does not reuse the cached white one
-kn=bytearray(kn); _w=bytes(kn).find(b'template/lego_white255.nut\0'); _s=bytes(kn).rfind(b'lego_models_extended',0,_w)
-assert _s>0 and kn[_s-5:_s-1]==b'\x00\x01\x00\x00'
-_old_id=bytes(kn[_s-21:_s-5]); _new_id=os.urandom(16)
-kn[_s-21:_s-5]=_new_id; kn[_w+9:_w+22]=b'kamact212diff'
-# after each name: u32, then a texture kind byte. Template placeholders are 04; the gunship's real albedo/decals are 0b
-_e=_w+len(b'template/lego_white255.nut\0'); assert kn[_e:_e+9]==bytes.fromhex('000000000400010002'), kn[_e:_e+9].hex()
-kn[_e+4]=0x0b; kn=bytes(kn)
-# the model's material names its textures by id and name: point it at the new entry
-_n_id=kg.count(_old_id); _n_nm=kg.count(b'template/lego_white255.nut\0')
-kg=kg.replace(_old_id,_new_id).replace(b'template/lego_white255.nut\0',b'template/kamact212diff.nut\0')
-print('kama material references updated: ids',_n_id,'names',_n_nm)
-print('kama copy: names renamed',c1,c2,c3,'; white texture replaced by KAMA_AIRBORN',_k.size)
+lg=open(LEIA+'GHG','rb').read()
+def _chunk(d,tag,end_tag): s_=d.find(tag+b'\x00\x00'); e_=d.find(end_tag+b'\x00\x00\x00',s_); assert 0<s_<e_; return s_,e_
+_ks,_ke=_chunk(kg,b'LTMU',b'SUPC'); _ls,_le=_chunk(lg,b'LTMU',b'SUPC')
+kg=kg[:_ks]+lg[_ls:_le]+kg[_ke:]
+_h=struct.unpack('>I',kg[:4])[0]; kg=kg[:_h+4]+struct.pack('>I',len(kg)-_h-8)+kg[_h+8:]
+print(f'kama materials: {struct.unpack(">I",lg[_ls+8:_ls+12])[0]} from Leia (was 4), {_le-_ls} bytes')
+def _selfpath(d,new):
+    d=bytearray(d); n=struct.unpack('>H',d[20:22])[0]; sp=new.encode(); assert len(sp)<n,(new,n)
+    d[22:22+n]=sp+bytes(n-len(sp)); k=22+n
+    while d[k]==0: k+=1
+    d[k:k+16]=os.urandom(16); return bytes(d)
+ks=_selfpath(open(LEIA+'PC_SHADERS','rb').read(),f'Chars/Super_Character/SkinnedSkirt/{KAMA.upper()}_DX11.pc_shaders')
+kn=_selfpath(open(LEIA+'NXG_TEXTURES','rb').read(),f'CHARS/SUPER_CHARACTER/SKINNEDSKIRT/{KAMA.upper()}_DX11.nxg_textures')
+TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
+print('kama copy: name renamed',c1,'; shaders and texture list from Leia')
 for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
 from PIL import Image
@@ -303,6 +301,12 @@ def patch(src,is_prefab):
         assert kama_ent['o']<=q<kama_ent['end'], 'kama model used outside the kama entity'
         edits.append((q,handle_len(q),handle_bytes(f'chars/super_character/skinnedskirt/{KAMA}_dx11.ghg',bytes(d[q+5:q+21]))))
     print('kama model -> own copy')
+    DK=Dec(bytes(d)); DK.trace=[]; DK.mobj(R(bytes(d),kama['o']),struct.unpack_from('<I',d,kama['o']-4)[0]); assert not DK.bad
+    q=[q for n_,k_,q in DK.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,q)[0]
+    edits.append((q,4+ln,struct.pack('<I',15)+b'[All Specials]\0'))
+    for q in [q for n_,k_,q in DK.trace if n_=='diffuse_1']:
+        edits.append((q,handle_len(q),handle_bytes(TX['kama_diff'],NEW_TEX[TX['kama_diff']][1])))
+    print('kama print -> diffuse_1, Special Name [All Specials]')
     # ---- the rifle painted black
     for x in O:
         if x['class']=='nttRenderTTExportObject' and x['path'] in ('Items/GRS1_SnareRifle','Items/GRS1_SnareRifle/Entity'):
