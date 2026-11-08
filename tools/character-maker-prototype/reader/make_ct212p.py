@@ -143,38 +143,20 @@ def solid_bc7_dds(rgb,size=256):
 import nxg as nxgmod
 KAMA_OLD='skinnedskirt_fabric_kamacloth'; KAMA='skinnedskirt_fabric_kamact212'; KDIR='CHARS/SUPER_CHARACTER/SKINNEDSKIRT'
 LEIA=glob.glob('/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_LEIA_EWOK_VILLAGE_INGAME_DX11.')[0] if False else '/mnt/user-data/uploads/LEGO Star Wars - The Skywalker Saga/CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_LEIA_EWOK_VILLAGE_INGAME_DX11.'
-kg,c1=nxgmod.rename(open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),KAMA_OLD,KAMA)
+# Leia's file is the host: her materials, shaders, texture list and skeleton (same bones as the kama), with
+# the kama's mesh put in (skinned and posed LOD0 lists, the shared index list, part infos)
+import ghg_mesh_swap
 lg=open(LEIA+'GHG','rb').read()
-def _chunk(d,tag,end_tag): s_=d.find(tag+b'\x00\x00'); e_=d.find(end_tag+b'\x00\x00\x00',s_); assert 0<s_<e_; return s_,e_
-_ks,_ke=_chunk(kg,b'LTMU',b'SUPC'); _ls,_le=_chunk(lg,b'LTMU',b'SUPC')
-# the section numbers its objects (DXTV vertex layouts) after the mesh's objects, and refers back to them as
-# c0 00 xx xx: renumber Leia's from her first material object to the kama's
-def _refs(d,a_,b_):
-    out=[]; i=a_
-    while True:
-        i=d.find(b'\xc0\x00',i,b_)
-        if i<0: return out
-        out.append((i,struct.unpack('>H',d[i+2:i+4])[0])); i+=2
-def _first_obj(d,s_,e_):
-    v=[x for _,x in _refs(d,s_,e_) if x<1000]; return min(v)
-_kf=_first_obj(kg,_ks,_ke); _lf=_first_obj(lg,_ls,_le); _off=_kf-_lf
-_lt=bytearray(lg[_ls:_le]); _n=0
-for i,v in _refs(lg,_ls,_le):
-    if _lf<=v<1000: struct.pack_into('>H',_lt,i-_ls+2,v+_off); _n+=1
-print(f'kama materials: object numbers {_lf}.. -> {_kf}.. ({_n} references renumbered)')
-kg=kg[:_ks]+bytes(_lt)+kg[_ke:]
-_h=struct.unpack('>I',kg[:4])[0]; kg=kg[:_h+4]+struct.pack('>I',len(kg)-_h-8)+kg[_h+8:]
-print(f'kama materials: {struct.unpack(">I",lg[_ls+8:_ls+12])[0]} from Leia (was 4), {_le-_ls} bytes')
+kg=ghg_mesh_swap.swap(lg,open(att('SKINNEDSKIRT_FABRIC_KAMACLOTH_DX11.GHG'),'rb').read(),{4:4,8:11},5,[0,2])
 def _selfpath(d,new):
     d=bytearray(d); n=struct.unpack('>H',d[20:22])[0]; sp=new.encode(); assert len(sp)<n,(new,n)
     d[22:22+n]=sp+bytes(n-len(sp)); k=22+n
     while d[k]==0: k+=1
     d[k:k+16]=os.urandom(16); return bytes(d)
-ks=_selfpath(open(LEIA+'PC_SHADERS','rb').read(),f'Chars/Super_Character/SkinnedSkirt/{KAMA.upper()}_DX11.pc_shaders')
-kn=_selfpath(open(LEIA+'NXG_TEXTURES','rb').read(),f'CHARS/SUPER_CHARACTER/SKINNEDSKIRT/{KAMA.upper()}_DX11.nxg_textures')
+kg=_selfpath(kg,f'Chars/Super_Character/SkinnedSkirt/{KAMA.upper()}_DX11.GHG')
+print('kama copy: kama mesh inside Leia Ewok Village skirt file',len(kg))
 TX['kama_diff']=add_texture('skinnedskirt','kama_ct212kama_diff',texture_from_dds(open(att('KAMA_AIRBORN.dds'),'rb').read()))
-print('kama copy: name renamed',c1,'; shaders and texture list from Leia')
-for ext,data in (('GHG',kg),('PC_SHADERS',ks),('NXG_TEXTURES',kn)): resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.{ext}',data))
+resources.append(put(f'{KDIR}/{KAMA.upper()}_DX11.GHG',kg))   # shaders and texture list: Leia's, from the game
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/pd'); import bc7enc
 from PIL import Image
 pdiff=Image.open(glob.glob(f'{ATT}/bc98a4b7-image.png')[0]).convert('RGBA')
