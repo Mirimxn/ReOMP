@@ -385,6 +385,10 @@ def patch(src,is_prefab):
     return bytes(out)
 
 out=patch(glob.glob(f'{ATT}/*-CARIBDISS.PREFAB_BAKED')[0],True)
+# clone troopers' voices go through a radio filter: the game applies it when the helmet entity has a
+# SpeechModifier component (CaribDiss has none). Copy the Utapau clone's onto our helmet entity.
+import add_component
+out=add_component.add(open(f'{DONOR_DIR}/CLONETROOPER_PHASE2_UTAPAU.PREFAB_BAKED','rb').read(),out,'SpeechModifier','HAT_CaribDiss','AttachToLocatorComponent',fresh_guid_at=23)
 put('CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED',out)
 scene=patch(glob.glob(f'{ATT}/*-CARIBDISS_CHEAPMINIFIG.SCENE_BAKED')[0],False)
 put('CHARS/MINIFIG/CARIBDISS/CT212KAMA_CHEAPMINIFIG.SCENE_BAKED',scene)
