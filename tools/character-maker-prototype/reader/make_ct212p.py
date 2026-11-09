@@ -123,7 +123,16 @@ def build_side(side):
 for sd in ('right','left'):
     r_=build_side(sd)
     if sd==SIDE: PLD,PLD_NAME,pfiles,col=r_
-for rel,data in pfiles.items(): resources.append(put(rel,data))
+for rel,data in pfiles.items():
+    if SLOT!='satchel': resources.append(put(rel,data))
+    else: put(rel,data)   # kept in the build folder for other characters, not used by this one
+# ---------- satchel: the game's shoulder bag (AdditionalModel_Satchel, skinned to the minifig skeleton) in the
+# template's additional-model entity, instead of the pauldron. Shipped at its game path (same files as the game's).
+SATCHEL='chars/super_character/additionalmodel/additionalmodel_satchel'
+SATCHEL_RGB=(0.098,0.023,0.006)   # LEGO reddish brown, linear
+if SLOT=='satchel':
+    for ext in ('GHG','PC_SHADERS','NXG_TEXTURES'):
+        resources.append(put(f'{SATCHEL.upper()}_DX11.{ext}',open(att(f'ADDITIONALMODEL_SATCHEL_DX11.{ext}'),'rb').read()))
 print('this character wears the',SIDE,'pauldron:',PLD)
 def srgb(c): return round(255*(12.92*c if c<=0.0031308 else 1.055*c**(1/2.4)-0.055))
 RGB=tuple(srgb(c) for c in col); print('pauldron colour',RGB)
@@ -215,7 +224,7 @@ def patch(src,is_prefab):
     for k in (9,9+12):   # pos.y in local NuTransform (floats 8..11) and world NuTransform
         y=struct.unpack_from('<f',d,p+4*k)[0]; struct.pack_into('<f',d,p+4*k,0.3742397129535675); print('helmet y',y,'->',struct.unpack_from('<f',d,p+4*k)[0])
     # disable the extra model and the face texture (entity and its components)
-    for ent in (('AdditionalModel_CaribDiss',) if SLOT=='face' else ('FaceTex_CaribDiss',)):
+    for ent in {'face':('AdditionalModel_CaribDiss',),'torso':('FaceTex_CaribDiss',),'satchel':()}[SLOT]:
         for x in O:
             if (x['class']=='apiEntity' and x['entity']==ent and x['path']=='') or x['path']==ent or x['path'].startswith(ent+'/'):
                 if x['class'] in ('apiEntity',) or S.classes[struct.unpack_from('<I',d,x['o']-4)[0]]['fields'][:1] and D.is_comp(struct.unpack_from('<I',d,x['o']-4)[0]):
@@ -248,6 +257,18 @@ def patch(src,is_prefab):
         edits.append((p,handle_len(p),handle_bytes(f'{PLD_DIR}/{PLD}_dx11.gsc',fid)))
         D2=set_material(rt)
         sn=[p for n_,k_,p in D2.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]; print('torso special name',bytes(d[sn+4:sn+4+ln]))
+    if SLOT=='satchel':
+        aent=[x for x in O if x['class']=='apiEntity' and x['entity']=='AdditionalModel_CaribDiss' and x['path']==''][0]
+        gm='chars/super_character/additionalmodel/additionalmodel_caribdiss_dx11.ghg'
+        ps=handle_at_path(gm); assert ps and all(aent['o']<=q<aent['end'] for q in ps),ps
+        for q in ps: edits.append((q,handle_len(q),handle_bytes(f'{SATCHEL}_dx11.ghg',bytes(d[q+5:q+21]))))
+        print('additional model -> satchel (render and skeleton):',len(ps))
+        rt=[x for x in O if x['path']=='AdditionalModel_CaribDiss' and x['class']=='nttRenderTTExportObject'][0]
+        DS=Dec(bytes(d)); DS.trace=[]; DS.mobj(R(bytes(d),rt['o']),struct.unpack_from('<I',d,rt['o']-4)[0]); assert not DS.bad
+        for sl in ('diffuse_0','normal_0','specular_0'):   # CaribDiss's own torso textures do not fit the bag's UVs
+            q=[q for n_,k_,q in DS.trace if n_==sl][1]
+            if d[q+4]: edits.append((q,handle_len(q),b'\x02\x00\x00\x00\x00'))
+        satchel_rt=rt
     if SLOT=='face':
       fent='FaceTex_CaribDiss'
       for x in O:
@@ -284,6 +305,7 @@ def patch(src,is_prefab):
     body=render_of(lambda x: x['path']=='' and model_of(x).endswith('super_minifig_dx11.ghg'))
     set_tints(body,{1:SKIN,2:SKIN,3:WHITE,4:WHITE,5:WHITE,6:WHITE,7:BLACK,8:BLACK,9:WHITE,10:WHITE,11:WHITE})
     set_tints(render_of(lambda x: x['path']==hatent),{1:WHITE})
+    if SLOT=='satchel': set_tints(satchel_rt,{0:SATCHEL_RGB,1:SATCHEL_RGB}); print('satchel reddish brown')
     kama=render_of(lambda x: x['path']=='SkinnedSkirt_Fabric')
     kama_ent=[x for x in O if x['class']=='apiEntity' and x['entity']=='SkinnedSkirt_Fabric' and x['path']==''][0]
     set_tints(kama,{0:(1.0,1.0,1.0),1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
@@ -359,7 +381,13 @@ def patch(src,is_prefab):
     f_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/facetex/facetex_head_dx11.gsc']
     f_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/facetex/facetex_head_nxg.gsc']
     assert len(f_dx)==1 and len(f_nx)==1
-    entries+= [(f'{PLD_DIR}/{PLD}_dx11.gsc',DH.recs[f_dx[0]]),(f'{PLD_DIR}/{PLD}_nxg.gsc',DH.recs[f_nx[0]])]
+    if SLOT!='satchel': entries+= [(f'{PLD_DIR}/{PLD}_dx11.gsc',DH.recs[f_dx[0]]),(f'{PLD_DIR}/{PLD}_nxg.gsc',DH.recs[f_nx[0]])]
+    else:
+        a_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/additionalmodel/additionalmodel_caribdiss_dx11.ghg']
+        a_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/additionalmodel/additionalmodel_caribdiss_nxg.ghg']
+        assert len(a_dx)==1 and len(a_nx)==1
+        entries+= [(f'{SATCHEL}_dx11.ghg',DH.recs[a_dx[0]]),(f'{SATCHEL}_nxg.ghg',DH.recs[a_nx[0]])]
+        old_dx=old_dx+a_dx; old_nx=old_nx+a_nx
     if SLOT=='face': old_dx=old_dx+f_dx; old_nx=old_nx+f_nx
     k_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_dx11.ghg']
     k_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_nxg.ghg']
