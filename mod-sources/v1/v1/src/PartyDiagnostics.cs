@@ -6,9 +6,8 @@ using OMP.LSWTSS.CApi1;
 namespace OMP.LSWTSS;
 
 // Temporary diagnostics: custom characters drop out of the party when it is changed.
-// Logs the party-select and party script calls, every change the game makes to a custom
-// character's row (and to any Characters row while a party change is being confirmed), and
-// snapshots of the party-related columns before and after each confirm.
+// Logs the party-select and party script calls and snapshots the party-related columns of the
+// custom rows (and their templates) before and after each confirm.
 // Writes "[party]" lines to omp-custom-vehicles.log. Each hook is optional: one that cannot be
 // created is reported in the log and skipped.
 public static partial class V1
@@ -167,7 +166,7 @@ public static partial class V1
         Try("PartySelect.CancelParty", () => { _partyCancelHook = new(PartySelectComponent.CancelPartyMethod.Info.NativePtr, PartyCancel); _partyCancelHook.Enable(); });
         Try("ScriptHelper.AddToParty", () => { _partyAddHook = new(ScriptHelper.AddToPartyMethod.Info.NativePtr, PartyAdd); _partyAddHook.Enable(); });
         Try("ScriptHelper.RemoveFromParty", () => { _partyRemoveHook = new(ScriptHelper.RemoveFromPartyMethod.Info.NativePtr, PartyRemove); _partyRemoveHook.Enable(); });
-        Try("Table.OnValueChanged", () => { _tableValueChangedHook = new(Collectables.Table.OnValueChangedMethod.Info.NativePtr, TableValueChanged); _tableValueChangedHook.Enable(); });
-        Try("Table.OnStructureChanged", () => { _tableStructureChangedHook = new(Collectables.Table.OnStructureChangedMethod.Info.NativePtr, TableStructureChanged); _tableStructureChangedHook.Enable(); });
+        // Not hooked: Table.OnValueChanged / OnStructureChanged. Their native code is shared with other classes
+        // (hooking them crashed the game at startup when the hook read the object as a table).
     }
 }
