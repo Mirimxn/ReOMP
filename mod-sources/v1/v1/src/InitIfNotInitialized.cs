@@ -22,6 +22,8 @@ public static partial class V1
         _cApi1NttResourceHandleAsyncLoadMethodHook.Enable();
         _cApi1UIRenderTargetModelLoaderLoadGraphMethodHook.Enable();
 
+        EnablePartyDiagnostics();
+
         _isInitialized = true;
     }
 }
