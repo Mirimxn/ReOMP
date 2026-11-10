@@ -2,6 +2,10 @@
 # Earlier notes: a copy of CaribDiss with the airborne helmet, 212th body textures,
 # the user's arm/hip textures, the kama kept, extra model and face texture disabled, helmet lowered.
 import sys,os,struct,glob,json,re
+import random as _random
+# ids are drawn from a seeded generator: the shared files (textures, helmet, kama, pauldron) come out identical in
+# every outfit's build, so the prefabs of different outfits can share them; each prefab then gets its own ids below.
+_rng=_random.Random('ct-kama-shared'); os.urandom=lambda n: bytes(_rng.getrandbits(8) for _ in range(n))
 sys.path.insert(0,'/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/cm')
 from schema import Schema,R,find_rec
 from objtree import objtable
@@ -17,7 +21,10 @@ ATT='/mnt/user-data/attachments/5d780e1f-0614-5cb0-8420-7e2215cd16ae'
 T212='/tmp/claude-0/-home-claude/5d780e1f-0614-5cb0-8420-7e2215cd16ae/scratchpad/ct212/212_trooper/CHARS'
 AIR='/mnt/user-data/outputs/airborne8/CHARS'
 OUT=sys.argv[1]
-SLOT=sys.argv[2] if len(sys.argv)>2 else 'face'   # which template slot hosts the pauldron: 'face' or 'torso'
+SLOT=sys.argv[2] if len(sys.argv)>2 else 'face'   # 'face' or 'torso' (pauldron slot), 'satchel', or 'satchel+face' (both)
+HAS_SAT='satchel' in SLOT; HAS_PLD=SLOT in ('face','torso','satchel+face'); FACE_PLD=SLOT in ('face','satchel+face')
+UNIT=os.environ.get('UNIT','212')   # which outfit this prefab is for: names the prefab and its roster link (OMP_CT<unit>)
+PNAME=f'CT{UNIT}Kama'; assert len(PNAME)==9
 def att(name): return glob.glob(f'{ATT}/*-{name}')[0]
 def put(rel,data):
     p=os.path.join(OUT,rel); os.makedirs(os.path.dirname(p),exist_ok=True); open(p,'wb').write(data); return rel
@@ -124,13 +131,13 @@ for sd in ('right','left'):
     r_=build_side(sd)
     if sd==SIDE: PLD,PLD_NAME,pfiles,col=r_
 for rel,data in pfiles.items():
-    if SLOT!='satchel': resources.append(put(rel,data))
+    if HAS_PLD: resources.append(put(rel,data))
     else: put(rel,data)   # kept in the build folder for other characters, not used by this one
 # ---------- satchel: the game's shoulder bag (AdditionalModel_Satchel, skinned to the minifig skeleton) in the
 # template's additional-model entity, instead of the pauldron. Shipped at its game path (same files as the game's).
 SATCHEL='chars/super_character/additionalmodel/additionalmodel_satchel'
 SATCHEL_RGB=(0.098,0.023,0.006)   # LEGO reddish brown, linear
-if SLOT=='satchel':
+if HAS_SAT:
     for ext in ('GHG','PC_SHADERS','NXG_TEXTURES'):
         resources.append(put(f'{SATCHEL.upper()}_DX11.{ext}',open(att(f'ADDITIONALMODEL_SATCHEL_DX11.{ext}'),'rb').read()))
 print('this character wears the',SIDE,'pauldron:',PLD)
@@ -224,7 +231,7 @@ def patch(src,is_prefab):
     for k in (9,9+12):   # pos.y in local NuTransform (floats 8..11) and world NuTransform
         y=struct.unpack_from('<f',d,p+4*k)[0]; struct.pack_into('<f',d,p+4*k,0.3742397129535675); print('helmet y',y,'->',struct.unpack_from('<f',d,p+4*k)[0])
     # disable the extra model and the face texture (entity and its components)
-    for ent in {'face':('AdditionalModel_CaribDiss',),'torso':('FaceTex_CaribDiss',),'satchel':()}[SLOT]:
+    for ent in {'face':('AdditionalModel_CaribDiss',),'torso':('FaceTex_CaribDiss',),'satchel':(),'satchel+face':()}[SLOT]:
         for x in O:
             if (x['class']=='apiEntity' and x['entity']==ent and x['path']=='') or x['path']==ent or x['path'].startswith(ent+'/'):
                 if x['class'] in ('apiEntity',) or S.classes[struct.unpack_from('<I',d,x['o']-4)[0]]['fields'][:1] and D.is_comp(struct.unpack_from('<I',d,x['o']-4)[0]):
@@ -257,7 +264,7 @@ def patch(src,is_prefab):
         edits.append((p,handle_len(p),handle_bytes(f'{PLD_DIR}/{PLD}_dx11.gsc',fid)))
         D2=set_material(rt)
         sn=[p for n_,k_,p in D2.trace if n_=='Special Name'][0]; ln=struct.unpack_from('<I',d,sn)[0]; print('torso special name',bytes(d[sn+4:sn+4+ln]))
-    if SLOT=='satchel':
+    if HAS_SAT:
         aent=[x for x in O if x['class']=='apiEntity' and x['entity']=='AdditionalModel_CaribDiss' and x['path']==''][0]
         gm='chars/super_character/additionalmodel/additionalmodel_caribdiss_dx11.ghg'
         ps=handle_at_path(gm); assert ps and all(aent['o']<=q<aent['end'] for q in ps),ps
@@ -269,7 +276,14 @@ def patch(src,is_prefab):
             q=[q for n_,k_,q in DS.trace if n_==sl][1]
             if d[q+4]: edits.append((q,handle_len(q),b'\x02\x00\x00\x00\x00'))
         satchel_rt=rt
-    if SLOT=='face':
+    if SLOT=='satchel':
+        # the template's face sits higher than a clone's (the helmet was lowered by the same amount above)
+        fent='FaceTex_CaribDiss'
+        tr=[x for x in O if x['path']==fent and x['class']=='apiTransformComponent'][0]
+        p=tr['o']+17+19
+        for k in (9,9+12):
+            y=struct.unpack_from('<f',d,p+4*k)[0]; struct.pack_into('<f',d,p+4*k,y-(0.3844897449016571-0.3742397129535675)); print('face y',y,'->',struct.unpack_from('<f',d,p+4*k)[0])
+    if FACE_PLD:
       fent='FaceTex_CaribDiss'
       for x in O:
           if x['path']==fent and x['class']=='AnimBlendTreeComponent':
@@ -305,7 +319,7 @@ def patch(src,is_prefab):
     body=render_of(lambda x: x['path']=='' and model_of(x).endswith('super_minifig_dx11.ghg'))
     set_tints(body,{1:SKIN,2:SKIN,3:WHITE,4:WHITE,5:WHITE,6:WHITE,7:BLACK,8:BLACK,9:WHITE,10:WHITE,11:WHITE})
     set_tints(render_of(lambda x: x['path']==hatent),{1:WHITE})
-    if SLOT=='satchel': set_tints(satchel_rt,{0:SATCHEL_RGB,1:SATCHEL_RGB}); print('satchel reddish brown')
+    if HAS_SAT: set_tints(satchel_rt,{0:SATCHEL_RGB,1:SATCHEL_RGB}); print('satchel reddish brown')
     kama=render_of(lambda x: x['path']=='SkinnedSkirt_Fabric')
     kama_ent=[x for x in O if x['class']=='apiEntity' and x['entity']=='SkinnedSkirt_Fabric' and x['path']==''][0]
     set_tints(kama,{0:(1.0,1.0,1.0),1:(1.0,1.0,1.0)})   # untinted, so the kama texture shows its own colours
@@ -338,20 +352,20 @@ def patch(src,is_prefab):
     # own name, ids and roster link
     n=selfpath_len(d); spath=bytes(d[22:22+n])
     if is_prefab:
-        assert spath.endswith(b'/CaribDiss.prefab_baked\0'), spath; spath=spath.replace(b'/CaribDiss.prefab_baked',b'/CT212Kama.prefab_baked')
+        assert spath.endswith(b'/CaribDiss.prefab_baked\0'), spath; spath=spath.replace(b'/CaribDiss.prefab_baked',f'/{PNAME}.prefab_baked'.encode())
     else:
-        assert spath.endswith(b'/caribdiss_cheapminifig.scene_baked\0'), spath; spath=spath.replace(b'/caribdiss_cheapminifig',b'/ct212kama_cheapminifig')
+        assert spath.endswith(b'/caribdiss_cheapminifig.scene_baked\0'), spath; spath=spath.replace(b'/caribdiss_cheapminifig',f'/{PNAME.lower()}_cheapminifig'.encode())
     d[22:22+n]=spath; d[22+n:38+n]=os.urandom(16)
-    for old,new in [(b'/caribdiss.prefab\0',b'/ct212kama.prefab\0'),(b'/caribdiss_character.prefab\0',b'/ct212kama_character.prefab\0'),(b'/caribdiss_cheapminifig.scene\0',b'/ct212kama_cheapminifig.scene\0')]:
+    for old,new in [(b'/caribdiss.prefab\0',f'/{PNAME.lower()}.prefab\0'.encode()),(b'/caribdiss_character.prefab\0',f'/{PNAME.lower()}_character.prefab\0'.encode()),(b'/caribdiss_cheapminifig.scene\0',f'/{PNAME.lower()}_cheapminifig.scene\0'.encode())]:
         c=bytes(d).count(old); d[:]=bytes(d).replace(old,new); print('inner name',new.decode().strip('/\0'),'x',c)
-    srcname=b'/ct212kama.prefab\0' if is_prefab else b'/ct212kama_cheapminifig.scene\0'; o=bytes(d).find(srcname); assert o>0; oid=bytes(d[o+len(srcname):o+len(srcname)+16]); rid=os.urandom(16)
+    srcname=f'/{PNAME.lower()}.prefab\0'.encode() if is_prefab else f'/{PNAME.lower()}_cheapminifig.scene\0'.encode(); o=bytes(d).find(srcname); assert o>0; oid=bytes(d[o+len(srcname):o+len(srcname)+16]); rid=os.urandom(16)
     print('resource id occurrences',bytes(d).count(oid)); d[:]=bytes(d).replace(oid,rid)
     o=bytes(d).find(b'Characters\0');
     while o>=0:
         ln=struct.unpack_from('<I',d,o+27)[0]
         if bytes(d[o+31:o+31+ln-1])==b'CaribDiss': break
         o=bytes(d).find(b'Characters\0',o+1)
-    if o>0: d[o+11:o+27]=bytes(16); d[o+31:o+31+9]=b'OMP_CT212'; print('roster link -> OMP_CT212')
+    if o>0: d[o+11:o+27]=bytes(16); d[o+31:o+31+9]=f'OMP_CT{UNIT}'.encode(); print(f'roster link -> OMP_CT{UNIT}')
     else: print('no roster link in this file')
 
     # size-changing edits, highest position first, growing every enclosing object and OLST
@@ -381,14 +395,14 @@ def patch(src,is_prefab):
     f_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/facetex/facetex_head_dx11.gsc']
     f_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/facetex/facetex_head_nxg.gsc']
     assert len(f_dx)==1 and len(f_nx)==1
-    if SLOT!='satchel': entries+= [(f'{PLD_DIR}/{PLD}_dx11.gsc',DH.recs[f_dx[0]]),(f'{PLD_DIR}/{PLD}_nxg.gsc',DH.recs[f_nx[0]])]
-    else:
+    if HAS_PLD: entries+= [(f'{PLD_DIR}/{PLD}_dx11.gsc',DH.recs[f_dx[0]]),(f'{PLD_DIR}/{PLD}_nxg.gsc',DH.recs[f_nx[0]])]
+    if HAS_SAT:
         a_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/additionalmodel/additionalmodel_caribdiss_dx11.ghg']
         a_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])=='chars/super_character/additionalmodel/additionalmodel_caribdiss_nxg.ghg']
         assert len(a_dx)==1 and len(a_nx)==1
         entries+= [(f'{SATCHEL}_dx11.ghg',DH.recs[a_dx[0]]),(f'{SATCHEL}_nxg.ghg',DH.recs[a_nx[0]])]
         old_dx=old_dx+a_dx; old_nx=old_nx+a_nx
-    if SLOT=='face': old_dx=old_dx+f_dx; old_nx=old_nx+f_nx
+    if FACE_PLD: old_dx=old_dx+f_dx; old_nx=old_nx+f_nx
     k_dx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_dx11.ghg']
     k_nx=[k for k in range(DH.nrec) if DH.path(DH.rec(k)['node'])==f'chars/super_character/skinnedskirt/{KAMA_OLD}_nxg.ghg']
     assert len(k_dx)==1 and len(k_nx)==1
@@ -412,14 +426,15 @@ def patch(src,is_prefab):
     print('header: tree entries added',len(added),'records',N.nrec,'->',len(keep))
     return bytes(out)
 
+_rng.seed('ct-kama-prefab-'+UNIT)
 out=patch(glob.glob(f'{ATT}/*-CARIBDISS.PREFAB_BAKED')[0],True)
 # clone troopers' voices go through a radio filter: the game applies it when the helmet entity has a
 # SpeechModifier component (CaribDiss has none). Copy the Utapau clone's onto our helmet entity.
 import add_component
 out=add_component.add(open(f'{DONOR_DIR}/CLONETROOPER_PHASE2_UTAPAU.PREFAB_BAKED','rb').read(),out,'SpeechModifier','HAT_CaribDiss','AttachToLocatorComponent',fresh_guid_at=23)
-put('CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED',out)
+put(f'CHARS/MINIFIG/CARIBDISS/{PNAME.upper()}.PREFAB_BAKED',out)
 scene=patch(glob.glob(f'{ATT}/*-CARIBDISS_CHEAPMINIFIG.SCENE_BAKED')[0],False)
-put('CHARS/MINIFIG/CARIBDISS/CT212KAMA_CHEAPMINIFIG.SCENE_BAKED',scene)
-resources[0:0]=['CHARS/MINIFIG/CARIBDISS/CT212KAMA.PREFAB_BAKED']   # the preview scene is served by v1, not registered
+put(f'CHARS/MINIFIG/CARIBDISS/{PNAME.upper()}_CHEAPMINIFIG.SCENE_BAKED',scene)
+resources[0:0]=[f'CHARS/MINIFIG/CARIBDISS/{PNAME.upper()}.PREFAB_BAKED']   # the preview scene is served by v1, not registered
 json.dump({'resources':resources},open(os.path.join(OUT,'resources.json'),'w'),indent=1)
 print('files:',len(resources))
