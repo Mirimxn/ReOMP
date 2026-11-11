@@ -110,7 +110,7 @@ $('front').onclick=()=>view(1);$('back').onclick=()=>view(-1);
 
 // ---------- materials: base colour + print in the colour map, then optional normal, BRDF and emission maps
 const pot=(v)=>{let p=4;while(p<v&&p<1024)p*=2;return p;};
-function makeSurface(color,hasUV1){const maps={};for(const [k] of MAPS)maps[k]={img:null,name:'',uv:(k!='color'&&hasUV1)?1:0,flip:false,glTex:null,dirty:true,dx:true};
+function makeSurface(color,hasUV1){const maps={};for(const [k] of MAPS)maps[k]={img:null,name:'',uv:(k!='color'&&hasUV1)?1:0,flip:false,glTex:null,dirty:true,dx:true,src:null,game:null,cleared:false};
   const c=document.createElement('canvas');c.width=c.height=4;const s={color,maps,canvas:c,glTex:null,dirty:true};paintColor(s);return s;}
 function paintColor(s){const m=s.maps.color,w=m.img?pot(m.img.width):4,h=m.img?pot(m.img.height):4;s.canvas.width=w;s.canvas.height=h;
   const g=s.canvas.getContext('2d');g.fillStyle=s.color;g.fillRect(0,0,w,h);if(m.img)g.drawImage(m.img,0,0,w,h);s.dirty=true;}
@@ -119,7 +119,8 @@ function upload(tex,src){gl.bindTexture(gl.TEXTURE_2D,tex);gl.pixelStorei(gl.UNP
 function colorTex(s){if(!s.glTex)s.glTex=gl.createTexture();if(s.dirty){upload(s.glTex,s.canvas);s.dirty=false;}else gl.bindTexture(gl.TEXTURE_2D,s.glTex);return s.glTex;}
 function potCanvas(img){const w=pot(img.width),h=pot(img.height);if(img.width==w&&img.height==h)return img;const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);return c;}
 function mapTex(m){if(!m.glTex)m.glTex=gl.createTexture();if(m.dirty){upload(m.glTex,potCanvas(m.img));m.dirty=false;}else gl.bindTexture(gl.TEXTURE_2D,m.glTex);return m.glTex;}
-function setMap(s,kind,img,name){const m=s.maps[kind];m.img=img;m.name=name;m.dirty=true;if(kind=='color')paintColor(s);}
+// meta: src = the user's file (exported as a new texture), game = a texture the base character already references, cleared = removed on purpose
+function setMap(s,kind,img,name,meta={}){const m=s.maps[kind];m.img=img;m.name=name;m.dirty=true;m.src=meta.src||null;m.game=meta.game||null;m.cleared=!!meta.cleared;if(kind=='color')paintColor(s);}
 async function loadImage(file){const n=file.name.toLowerCase();const buf=await file.arrayBuffer();let r;
   if(n.endsWith('.dds'))r=parseDDS(buf);else if(n.endsWith('.texture'))r=parseGameTexture(buf);
   else{const bmp=await createImageBitmap(new Blob([buf]));const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);return c;}
@@ -142,14 +143,16 @@ function mapCount(s){return MAPS.filter(([k])=>s.maps[k].img).length;}
 function mapEditor(owner,ownerKey,refresh){const s=owner.surface;const box=document.createElement('div');box.className='maps';
   for(const [k,label] of MAPS){const m=s.maps[k];const r=document.createElement('div');r.className='maprow';
     const l=document.createElement('span');l.className='mlabel';l.textContent=label;
-    const nm=document.createElement('span');nm.className='tex';nm.textContent=m.name||'none';nm.title=m.name;
+    const nm=document.createElement('span');nm.className='tex';const ref=!owner.newModel&&s.refs&&s.refs[k];
+    nm.textContent=m.name||(m.cleared?'removed':ref?'game: '+ref.path.split('/').pop()+(CH?' (drop it to see it)':''):'none');nm.title=m.name||(ref?ref.path:'');
     const sel=document.createElement('select');sel.id='uv_'+ownerKey+'_'+k;sel.setAttribute('aria-label',label+' UV set');
     for(const [v,t] of [[0,'UV 1'],[1,'UV 2']]){const o=document.createElement('option');o.value=v;o.textContent=t;sel.append(o);}sel.value=m.uv;sel.onchange=()=>{m.uv=+sel.value;};
     const fl=document.createElement('label');fl.className='mini';const fc=document.createElement('input');fc.type='checkbox';fc.checked=m.flip;fc.id='flip_'+ownerKey+'_'+k;fc.onchange=()=>{m.flip=fc.checked;};
     fl.append(fc,document.createTextNode('Flip'));fl.title='Flip the texture vertically';
     r.append(l,nm,sel,fl,btn('Load','icon',()=>chooseFor(owner,k),'Load '+label.toLowerCase()+' texture'),
-      btn('×','icon',()=>{setMap(s,k,null,'');refresh();},'Remove '+label.toLowerCase()+' texture'));
+      btn('×','icon',()=>{setMap(s,k,null,'',{cleared:!!(s.refs&&s.refs[k])});refresh();},'Remove '+label.toLowerCase()+' texture'));
     box.append(r);
+    if(k=='emission'&&CH){const r3=document.createElement('p');r3.className='hint sub2';r3.textContent='Shown here only: character materials have no emission slot.';box.append(r3);}
     if(k=='normal'){const r2=document.createElement('label');r2.className='mini sub2';const c2=document.createElement('input');c2.type='checkbox';c2.checked=m.dx;c2.id='dx_'+ownerKey;
       c2.onchange=()=>{m.dx=c2.checked;};r2.append(c2,document.createTextNode('Green channel points down (game and DirectX normal maps)'));box.append(r2);}}
   return box;}
@@ -169,15 +172,16 @@ function renderBodyRows(){const box=$('bodyRows');box.textContent='';
 
 // ---------- parts
 const parts=[];let partSeq=0;
-function defaultPlacement(name,model){const n=name.toUpperCase();
+function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)return {y:0};
   if(/HAT|HELMET|HAIR/.test(n))return {y:0.3742};      // helmet height used by the clone trooper prefabs
   if(/PAULDRON/.test(n))return {y:0.2891};             // neck locator
   if(/SKIRT|KAMA/.test(n))return {y:0.104};
   return {y:model.skinned?0:0.3742};}
 function addPart(name,model,opts={}){
-  const p={id:++partSeq,name,model,surface:makeSurface(opts.color||'#f2f2f0',model.hasUV1),meshes:[],visible:true,
-    place:Object.assign({x:0,y:0,z:0},defaultPlacement(name,model))};
-  p.meshes=model.pieces.map(pc=>geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx));parts.push(p);expanded.add('p'+p.id);return p;}
+  const p={id:++partSeq,name,model,surface:makeSurface(opts.color||'#f2f2f0',model?model.hasUV1:true),meshes:[],visible:true,
+    place:Object.assign({x:0,y:0,z:0},opts.place||defaultPlacement(name,model))};
+  if(model)p.meshes=meshesOf(model);parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
+function meshesOf(model){return model.pieces.map(pc=>geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx));}
 function renderParts(){const box=$('partList');box.textContent='';$('noParts').hidden=parts.length>0;
   for(const p of parts){const el=document.createElement('div');el.className='part';const key='p'+p.id;
     const head=document.createElement('div');head.className='part-head';
@@ -186,9 +190,12 @@ function renderParts(){const box=$('partList');box.textContent='';$('noParts').h
     nm.onclick=()=>{if(expanded.has(key))expanded.delete(key);else expanded.add(key);setTarget({ref:p,el});renderParts();};
     const col=document.createElement('input');col.type='color';col.value=p.surface.color;col.id='pcol_'+p.id;col.setAttribute('aria-label',p.name+' colour');
     col.oninput=()=>{p.surface.color=col.value;paintColor(p.surface);};
-    head.append(vis,nm,col,btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
+    if(p.entity){vis.setAttribute('aria-label','Include '+p.entity+' in the character');vis.title='Part of the character: untick to leave it out of the exported character';
+      head.append(vis,nm,col,btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entity));}
+    else head.append(vis,nm,col,btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
     el.append(head);
-    if(expanded.has(key)){el.append(mapEditor(p,key,renderParts));
+    if(CH)el.append(partSlotLine(p));
+    if(expanded.has(key)){if(p.entity&&p.newModel)el.append(specialEditor(p));el.append(mapEditor(p,key,renderParts));
       const grid=document.createElement('div');grid.className='part-grid';
       for(const [ax,lab,min,max] of [['y','Height',-0.1,0.5],['x','Side',-0.2,0.2],['z','Depth',-0.2,0.2]]){
         const l=document.createElement('span');l.textContent=lab;const r=document.createElement('input');r.type='range';r.min=min;r.max=max;r.step=0.0005;r.value=p.place[ax];r.id='pl_'+ax+'_'+p.id;r.setAttribute('aria-label',p.name+' '+lab);
@@ -209,23 +216,216 @@ function ownerOf(name){const n=name.toUpperCase().replace(/\.[A-Z]+$/,'');
   for(const [id,,,re] of SLOT_INFO)if(re.test(n))return slots[id];
   return null;}
 async function handleFiles(files,forced){let placed=0;const skipped=[];
+  // a character first, then its preview scene, then everything else (so game files can match its references)
+  const rank=(n)=>/\.prefab_baked$/i.test(n)?0:/\.scene_baked$/i.test(n)?1:/\.(pc_shaders|nxg_textures)$/i.test(n)?2:3;
+  files=[...files].sort((a,b)=>rank(a.name)-rank(b.name));
   for(const f of files){const n=f.name;try{
-    if(/\.(gsc|ghg)$/i.test(n)){const model=parseModel(await f.arrayBuffer());if(!model.pieces.length)throw new Error('no visible mesh in this model');
-      const p=addPart(n,model);renderParts();setTarget({ref:p,el:null});placed++;continue;}
+    if(/\.(prefab|scene)_baked$/i.test(n)){say('Reading '+n+'…');await new Promise(r=>setTimeout(r,20));
+      loadCharacter(n,new Uint8Array(await f.arrayBuffer()));placed++;continue;}
+    if(/\.(pc_shaders|nxg_textures)$/i.test(n)){extraFiles.set(n.toLowerCase(),{name:n,data:new Uint8Array(await f.arrayBuffer())});placed++;continue;}
+    if(/\.(gsc|ghg)$/i.test(n)){const buf=await f.arrayBuffer();const model=parseModel(buf);if(!model.pieces.length)throw new Error('no visible mesh in this model');
+      const bytes=new Uint8Array(buf);
+      if(forced&&forced.replace){setPartModel(forced.replace,n,model,bytes);renderParts();placed++;continue;}
+      const own=CH&&parts.find(p=>p.entity&&keyOf(p.origModel)==keyOf(n));
+      if(own){setPartModel(own,n,model,null);renderParts();placed++;continue;}
+      const p=addPart(n,model);p.bytes=bytes;renderParts();setTarget({ref:p,el:null});placed++;continue;}
     if(!/\.(dds|texture|png|jpe?g|webp)$/i.test(n)){skipped.push(n+' (not a texture or model)');continue;}
     if(!forced&&WEATHER.test(n)){skipped.push(n+' (weather overlay: not shown here)');continue;}
+    // a texture the loaded character already uses: show it wherever it is used
+    const game=CH&&CH.refIndex.get(keyOf(n));
+    if(game&&!forced){const img=await loadImage(f);let hit=0;
+      for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==game.path){setMap(o.surface,k,img,n,{game});hit++;}
+      if(hit){placed++;continue;}}
     const owner=forced?forced.ref:(ownerOf(n)||(target&&target.ref));
     if(!owner){skipped.push(n+' (the name does not say which part it is for: click a part or body row name, then load it again)');continue;}
     const kind=forced&&forced.kind?forced.kind:kindOf(n);
-    setMap(owner.surface,kind,await loadImage(f),n);placed++;
+    setMap(owner.surface,kind,await loadImage(f),n,game?{game}:{src:f});placed++;
   }catch(err){skipped.push(n+' ('+err.message+')');}}
-  renderBodyRows();renderParts();
+  renderBodyRows();renderParts();renderCharacter();
   if(skipped.length)say((placed?'Loaded '+placed+'. ':'')+'Skipped: '+skipped.join('; '),placed==0);else if(placed)say('Loaded '+placed+' file'+(placed>1?'s':'')+'.');}
 let dragDepth=0;
 window.addEventListener('dragenter',(e)=>{e.preventDefault();dragDepth++;$('drop').hidden=false;});
 window.addEventListener('dragleave',()=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)$('drop').hidden=true;});
 window.addEventListener('dragover',(e)=>e.preventDefault());
 window.addEventListener('drop',(e)=>{e.preventDefault();dragDepth=0;$('drop').hidden=true;handleFiles([...e.dataTransfer.files],null);});
+
+// ---------- character prefab: load a game character, dress it, export it as a mod
+// The prefab carries the character's abilities, voice and behaviour; its parts and materials are what can change.
+const TEX_FOLDER={head:'head',body_front:'body',body_back:'body',arm_l:'arm',arm_r:'arm',hands:'hand',hips:'hip',leg_l:'leg',leg_r:'leg'};
+const TEX_PART={head:'',body_front:'front',body_back:'back',arm_l:'left',arm_r:'right',hands:'',hips:'',leg_l:'left',leg_r:'right'};
+const KIND_TAG={color:'diff',normal:'nrm',brdf:'brdf'};
+const FACTIONS=[['','Same as the base character'],['0','Jedi'],['1','Sith'],['2','Hero'],['3','Bounty Hunter'],['4','Astromech Droid'],['5','Protocol Droid'],['6','Scoundrel'],['7','Villain'],['8','Scavenger'],['9','Civilian']];
+let CH=null;
+const extraFiles=new Map();   // .pc_shaders / .nxg_textures that go with a replacement model
+const keyOf=(n)=>n.toLowerCase().split('/').pop().replace(/\.[a-z0-9_]+$/,'').replace(/_dx11$/,'');
+const hexOf=(rgb)=>'#'+rgb.map(c=>PF.srgb(c).toString(16).padStart(2,'0')).join('');
+const linOf=(hex)=>hexRGB(hex).map(c=>PF.lin(c*255));
+const baseFile=(p)=>p.split('/').pop();
+function refsOf(C,r,ids){const out={};
+  for(const ov of r.overrides){if(ids&&!ids.includes(ov.id))continue;
+    for(const [f,s] of Object.entries(ov.slots)){if(!s.path)continue;
+      const k=f.startsWith('diffuse')?'color':f=='normal_0'?'normal':f=='specular_0'?'brdf':null;
+      if(k&&!out[k])out[k]={field:f,path:s.path,id:C.d.slice(s.pos+5,s.pos+21)};}}
+  return out;}
+function tintOf(C,r,ids){const ov=r.overrides.find(o=>(!ids||ids.includes(o.id))&&o.tintEn!=null&&C.d[o.tintEn]===1);return ov?hexOf(ov.colour):null;}
+
+function loadCharacter(name,bytes){
+  const C=PF.readCharacter(bytes);C.d=bytes;
+  if(C.isScene){
+    if(!CH)throw new Error('load the character .prefab_baked first, then its preview scene');
+    if(C.baseName.toLowerCase()!=CH.C.baseName.toLowerCase())throw new Error('this preview scene is for '+C.baseName+', not '+CH.C.baseName);
+    CH.scene={name,bytes,C};renderCharacter();say('Preview scene added: the roster will show the new look.');return;}
+  if(!C.body)throw new Error('no minifig body in this prefab');
+  resetAll();
+  CH={name,bytes,C,scene:null,refIndex:new Map()};
+  const index=(refs)=>{for(const r of Object.values(refs))CH.refIndex.set(keyOf(r.path),r);};
+  for(const [id] of SLOT_INFO){const s=slots[id].surface;const ids=PF.BODY_IDS[id];
+    s.refs=refsOf(C,C.body,PF.BODY_TEX_IDS[id]||ids);index(s.refs);
+    s.color=tintOf(C,C.body,ids)||slots[id].defColor;s.origColor=s.color;paintColor(s);}
+  for(const r of C.attachments){const skinned=/\.ghg$/i.test(r.model.path);
+    const place=(!skinned&&r.transform)?{x:r.transform.local[0],y:r.transform.local[1],z:r.transform.local[2]}:null;
+    const p=addPart(baseFile(r.model.path),null,{color:tintOf(C,r)||'#f2f2f0',place,collapsed:true});
+    if(skinned)Object.assign(p.place,defaultPlacement(r.model.path,{skinned:true}));
+    Object.assign(p,{entity:r.entity,origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
+      visible:r.enabled,origEnabled:r.enabled,rigid:!skinned,origPlace:{...p.place},origColor:p.surface.color});
+    p.surface.refs=refsOf(C,r);index(p.surface.refs);}
+  // the game's own minifig maps are useful to see but are not what a mod changes
+  renderBodyRows();renderParts();renderCharacter();
+  $('expName').value='';$('expId').value='';$('expMod').value='';$('expDesc').value='';
+  say('Loaded '+C.baseName+'. Drop its game textures and models to see it, then change what you like and export.');}
+
+function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);
+  if(p.entity&&bytes){const path=PF.selfPath(bytes).toLowerCase();
+    if(keyOf(path)==keyOf(p.origModel)){p.newModel=null;p.name=name;return;}
+    const names=PF.specialNames(bytes);
+    p.newModel={name,bytes,path,selfPath:PF.selfPath(bytes),names};p.name=name;
+    p.special=/\.ghg$/i.test(path)?'[All Specials]':(names[0]||'[All Specials]');
+    p.rigid=!/\.ghg$/i.test(path);if(!p.rigid)Object.assign(p.place,defaultPlacement(name,model));
+    expanded.add('p'+p.id);}
+  else p.name=name;}
+
+// one line under a part: which character slot it fills
+function partSlotLine(p){const l=document.createElement('div');l.className='hint slotline';
+  if(p.entity){l.textContent='Slot '+p.entity+(p.newModel?' · new model (game had '+baseFile(p.origModel)+')':p.model?'':' · '+baseFile(p.origModel)+' not loaded');
+    if(p.newModel){const u=btn('Undo','icon',()=>{p.newModel=null;p.model=null;p.meshes=[];p.name=baseFile(p.origModel);p.special=p.origSpecial;p.rigid=!/\.ghg$/i.test(p.origModel);renderParts();},'Go back to the game model');u.style.marginLeft='6px';l.append(u);}
+    return l;}
+  l.textContent='View only. Use it as: ';const sel=document.createElement('select');sel.setAttribute('aria-label','Character slot for '+p.name);
+  const o0=document.createElement('option');o0.value='';o0.textContent='nothing (view only)';sel.append(o0);
+  for(const q of parts.filter(q=>q.entity)){const o=document.createElement('option');o.value=q.entity;o.textContent=q.entity;sel.append(o);}
+  sel.onchange=()=>{const q=parts.find(x=>x.entity==sel.value);if(!q)return;
+    setPartModel(q,p.name,p.model,p.bytes);for(const [k] of MAPS){const a=p.surface.maps[k];if(a.img)setMap(q.surface,k,a.img,a.name,{src:a.src,game:a.game});}
+    q.surface.color=p.surface.color;paintColor(q.surface);q.visible=true;
+    parts.splice(parts.indexOf(p),1);renderParts();say(p.name+' now fills '+q.entity+'.');};
+  l.append(sel);return l;}
+function specialEditor(p){const w=document.createElement('div');w.className='part-grid';
+  const l=document.createElement('label');l.textContent='Part name';l.htmlFor='sp_'+p.id;
+  const i=document.createElement('input');i.id='sp_'+p.id;i.value=p.special||'';i.setAttribute('list','spl_'+p.id);i.className='txt';
+  i.title='The model part the game draws. Helmets name one (e.g. Hat_Cl2ab); [All Specials] draws everything.';
+  const dl=document.createElement('datalist');dl.id='spl_'+p.id;for(const n of ['[All Specials]',...p.newModel.names]){const o=document.createElement('option');o.value=n;dl.append(o);}
+  i.oninput=()=>{p.special=i.value;};w.append(l,i,dl);return w;}
+
+// what the character panel shows: base, abilities, preview, and the game files still to drop
+function renderCharacter(){const sec=$('charSec'),ex=$('exportSec');sec.hidden=ex.hidden=!CH;if(!CH)return;const C=CH.C;
+  $('charBase').textContent=C.baseName;$('charRow').textContent=C.roster?C.roster.name:'(none found)';
+  $('charScene').textContent=CH.scene?CH.scene.name:'not loaded: drop '+C.baseName.toLowerCase()+'_cheapminifig.scene_baked so the roster shows the new look';
+  const need=[];
+  for(const p of parts)if(p.entity&&!p.model&&!p.newModel)need.push(baseFile(p.origModel));
+  for(const o of [...Object.values(slots),...parts])if(o.surface.refs&&o.surface.refs.color&&!o.surface.maps.color.img&&!o.surface.maps.color.cleared)need.push(baseFile(o.surface.refs.color.path));
+  const u=[...new Set(need)];$('charNeed').textContent=u.length?'To see it as in the game, drop: '+u.join(', '):'All its models and prints are loaded.';
+  if(!$('expId').value)$('internalName').textContent='';else $('internalName').textContent=internalName($('expId').value,C.baseName);}
+
+function internalName(id,base){const L=base.length;const s=id.replace(/[^A-Za-z0-9]/g,'');const h=PF.crc32(PF.enc(id.toUpperCase())).toString(36).toUpperCase().padStart(7,'0');
+  let n=s.length>L?s.slice(0,Math.max(1,L-3))+h:s+h+h+h;return n.slice(0,L);}
+const slug=(s)=>s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48);
+$('expName').oninput=()=>{const v=$('expName').value;if(!$('expId').dataset.touched)$('expId').value=v.toUpperCase().replace(/[^A-Z0-9]+/g,'').slice(0,12);
+  if(!$('expMod').dataset.touched)$('expMod').value=slug(v);renderCharacter();};
+$('expId').oninput=()=>{$('expId').dataset.touched=1;renderCharacter();};$('expMod').oninput=()=>{$('expMod').dataset.touched=1;};
+{const sel=$('expFaction');for(const [v,t] of FACTIONS){const o=document.createElement('option');o.value=v;o.textContent=t;sel.append(o);}}
+let iconFile=null;$('expIconBtn').onclick=()=>$('iconInput').click();
+$('iconInput').onchange=(e)=>{iconFile=e.target.files[0]||null;e.target.value='';$('expIconName').textContent=iconFile?iconFile.name:'none';};
+
+// ---------- export
+const potX=(v)=>{let p=4;while(p<v&&p<2048)p*=2;return p;};
+async function buildTexture(m,gamePath){const f=m.src,n=f.name.toLowerCase();const buf=new Uint8Array(await f.arrayBuffer());
+  if(n.endsWith('.texture')&&!m.flip)return PF.retargetTexture(buf,gamePath);
+  const v=new DataView(buf.buffer);
+  if(n.endsWith('.dds')&&!m.flip&&buf.length>148&&String.fromCharCode(...buf.slice(84,88))=='DX10'&&v.getUint32(128,true)==98){
+    const h=v.getUint32(12,true),w=v.getUint32(16,true),mips=Math.max(1,v.getUint32(28,true));
+    if(PF.bc7size(w,h,mips)==buf.length-148)return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),w,h,mips,buf.slice(148)),gamePath);}
+  const img=m.img;const W=potX(img.width),H=potX(img.height);const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+  if(m.flip){g.translate(0,H);g.scale(1,-1);}g.drawImage(img,0,0,W,H);
+  const px=g.getImageData(0,0,W,H).data;const e=PF.encodeBC7(px,W,H);
+  return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath);}
+const b64u=(s)=>new Uint8Array(b64(s));
+async function exportMod(){if(!CH)return;const C=CH.C;
+  const name=$('expName').value.trim(),id=$('expId').value.trim().toUpperCase(),mod=$('expMod').value.trim(),desc=$('expDesc').value.trim();
+  if(!name)return say('Give the character a name first.',true);
+  if(!/^[A-Z0-9_]{2,24}$/.test(id))return say('The character ID needs 2–24 letters, digits or _.',true);
+  if(!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(mod))return say('The mod folder name may use lower-case letters, digits, - and _.',true);
+  const btnE=$('exportBtn');btnE.disabled=true;
+  try{
+  const pname=internalName(id,C.baseName);const files=[],resources=[],texList=[],alone=[];const cache=new Map();
+  const tick=()=>new Promise(r=>setTimeout(r,0));
+  async function texFor(m,folder,stem,ref){
+    if(m.src){const key=m.src.name+'|'+m.src.size+'|'+m.flip;if(cache.has(key))return cache.get(key);
+      say('Encoding '+m.src.name+'…');await tick();
+      const gp=`Chars/Super_Character_Texture/${folder.toUpperCase()}/${stem.toUpperCase()}_DX11.texture`;
+      const t=await buildTexture(m,gp);const rel=`CHARS/SUPER_CHARACTER_TEXTURE/${folder.toUpperCase()}/${stem.toUpperCase()}_DX11.texture`;
+      files.push([rel,t.data]);resources.push(rel);const r={path:`chars/super_character_texture/${folder}/${stem}.texture`.toLowerCase(),id:t.id};texList.push(r);cache.set(key,r);return r;}
+    if(m.game&&(!ref||m.game.path!=ref.path))return m.game;
+    if(m.cleared)return null;
+    return undefined;}   // unchanged
+  const P=pname.toLowerCase();const plan={internalName:pname,rosterRow:'OMP_'+id,body:{},parts:[]};
+  for(const [sid] of SLOT_INFO){const s=slots[sid].surface,ch={};
+    if(s.color.toLowerCase()!=(s.origColor||'').toLowerCase())ch.tint=linOf(s.color);
+    for(const k of ['color','normal','brdf']){const ref=s.refs&&s.refs[k];const field=k=='color'?(ref?ref.field:'diffuse_1'):k=='normal'?'normal_0':'specular_0';
+      const stem=[TEX_FOLDER[sid],P,TEX_PART[sid],KIND_TAG[k]].filter(Boolean).join('_');
+      const t=await texFor(s.maps[k],TEX_FOLDER[sid],stem,ref);if(t!==undefined)(ch.tex=ch.tex||{})[field]=t;}
+    if(ch.tint||ch.tex)plan.body[sid]=ch;}
+  for(const p of parts.filter(q=>q.entity)){const pc={entity:p.entity};const s=p.surface;
+    if(!p.visible){pc.enabled=false;plan.parts.push(pc);continue;}
+    const folder=(p.newModel?p.newModel.path:p.origModel).split('/').slice(-2,-1)[0]||'additionalmodel';
+    const same=parts.filter(q=>q.entity&&((q.newModel?q.newModel.path:q.origModel).split('/').slice(-2,-1)[0]||'additionalmodel')==folder);
+    const tag=same.length>1?String(same.indexOf(p)+1):'';
+    if(p.newModel){pc.model={path:p.newModel.path};pc.special=p.special||'[All Specials]';pc.tex={};
+      const cf=(s.refs&&s.refs.color)?s.refs.color.field:'diffuse_1';
+      for(const k of ['color','normal','brdf']){const m=s.maps[k];let t=await texFor(m,folder,[folder,P,tag,KIND_TAG[k]].filter(Boolean).join('_'),null);if(t===undefined)t=null;
+        if(k=='color'){pc.tex.diffuse_0=cf=='diffuse_0'?t:null;pc.tex.diffuse_1=cf=='diffuse_1'?t:null;}else pc.tex[k=='normal'?'normal_0':'specular_0']=t;}
+      if(!p.newModel.orig){const sp=p.newModel.selfPath;files.push([sp,p.newModel.bytes]);resources.push(sp);
+        const stem=p.newModel.name.replace(/\.[^.]+$/,'').toLowerCase();
+        let found=0;for(const ext of ['pc_shaders','nxg_textures']){const x=extraFiles.get(stem+'.'+ext);if(x){found++;const rel=sp.replace(/\.[^./]+$/,'.'+ext.toUpperCase());files.push([rel,x.data]);resources.push(rel);}}
+        if(found<2)alone.push(p.newModel.name);}}
+    else{for(const k of ['color','normal','brdf']){const ref=s.refs&&s.refs[k];const field=k=='color'?(ref?ref.field:'diffuse_1'):k=='normal'?'normal_0':'specular_0';
+        const t=await texFor(s.maps[k],folder,[folder,P,tag,KIND_TAG[k]].filter(Boolean).join('_'),ref);if(t!==undefined)(pc.tex=pc.tex||{})[field]=t;}}
+    if(s.color.toLowerCase()!=(p.origColor||'').toLowerCase()||p.newModel)pc.tint=linOf(s.color);
+    if(p.rigid&&p.origPlace&&['x','y','z'].some(a=>Math.abs(p.place[a]-p.origPlace[a])>1e-5))pc.place=[p.place.x,p.place.y,p.place.z];
+    plan.parts.push(pc);}
+  say('Writing the prefab…');await tick();
+  const pre=PF.apply(CH.bytes,plan,{textures:texList});const dir=pre.selfPath.slice(0,pre.selfPath.lastIndexOf('/')+1).toUpperCase();
+  const prefabRel=dir+pname.toUpperCase()+'.PREFAB_BAKED';files.unshift([prefabRel,pre.data]);resources.unshift(prefabRel);
+  let sceneRel=null;
+  if(CH.scene){const sc=PF.apply(CH.scene.bytes,plan,{textures:texList});sceneRel=dir+pname.toUpperCase()+'_CHEAPMINIFIG.SCENE_BAKED';files.push([sceneRel,sc.data]);}
+  let icon=null;if(iconFile){const bmp=await createImageBitmap(iconFile);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
+    const blob=await new Promise(r=>c.toBlob(r,'image/png'));files.push(['icon.png',new Uint8Array(await blob.arrayBuffer())]);icon='icon.png';}
+  const payload={id,tableName:'Characters',templateMatch:C.roster?C.roster.name:C.baseName,prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};
+  if(icon)payload.icon=icon;
+  if(sceneRel){payload.previewScene=sceneRel;const pb=$('expPreview').value.trim();if(pb)payload.previewBase=pb;}
+  const fac=$('expFaction').value;if(fac!=='')payload.columnOverrides={CharacterClass:fac};
+  const manifest={name,description:desc||name,dependencies:[{id:'v1'}],
+    actions:[...resources.map(r=>({typeId:'v1/register-custom-resource-action',payload:{path:r,srcPath:r}})),{typeId:'v1/register-custom-vehicle-action',payload}]};
+  files.unshift(['mod.json',PF.enc(JSON.stringify(manifest,null,1))]);
+  const zipped=PF.zip(files.map(([n,d])=>[mod+'/'+n,d]));
+  const kept=parts.filter(p=>!p.entity).length;
+  await saveFile(mod+'.zip',zipped);
+  say('Exported '+mod+'.zip: '+(files.length-1)+' files.'+(kept?' View-only parts were left out.':'')+
+    (alone.length?' '+alone.join(', ')+' went without its .pc_shaders and .nxg_textures: fine for a game model, otherwise drop them and export again.':''));}
+  catch(e){say('Export failed: '+e.message,true);console.error(e);}
+  finally{btnE.disabled=false;}}
+$('exportBtn').onclick=exportMod;
+async function saveFile(filename,data){
+  const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+  if(dl){try{await dl.save({filename,data:new Blob([data])});return;}catch(e){if(e&&e.code=='declined')throw new Error('saving was cancelled');if(e&&e.code&&!['unavailable','not_granted','capability_disabled','capability_removed'].includes(e.code))throw new Error(e.message||e.code);}}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/zip'}));a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}
 
 // ---------- example: the 212th airborne clone trooper
 async function loadExample(){
@@ -240,9 +440,10 @@ async function loadExample(){
   setMap(sat.surface,'normal',await imgFromURL(SAMPLE_TEX.satchel_nrm),'ADDITIONALMODEL_SATCHEL_NRM (example)');
   setMap(sat.surface,'brdf',await imgFromURL(SAMPLE_TEX.satchel_brdf),'ADDITIONALMODEL_SATCHEL_BRDF (example)');
   expanded.clear();renderBodyRows();renderParts();}
-$('clearAll').onclick=()=>{parts.length=0;target=null;expanded.clear();
-  for(const [id] of SLOT_INFO){const s=slots[id].surface;for(const [k] of MAPS){s.maps[k].img=null;s.maps[k].name='';s.maps[k].dirty=true;}s.color=slots[id].defColor;paintColor(s);}
-  renderBodyRows();renderParts();say('Plain minifig. Load textures or parts to dress it.');};
+function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;extraFiles.clear();
+  for(const [id] of SLOT_INFO){const s=slots[id].surface;s.refs=null;for(const [k] of MAPS){Object.assign(s.maps[k],{img:null,name:'',dirty:true,src:null,game:null,cleared:false});}s.color=slots[id].defColor;paintColor(s);}
+  renderCharacter();}
+$('clearAll').onclick=()=>{resetAll();renderBodyRows();renderParts();say('Plain minifig. Load textures, parts or a character prefab.');};
 renderBodyRows();renderParts();requestAnimationFrame(frame);
 loadExample().catch(e=>say('The example could not load: '+e.message,true));
 </script>

@@ -64,6 +64,15 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
 @media (max-width:760px){.app{grid-template-columns:1fr;grid-template-rows:56vh auto;height:auto}
   .stage{grid-row:1;height:56vh}.rail{grid-row:2;border-right:0;border-top:1px solid var(--line);padding-right:max(16px,env(safe-area-inset-right,0px))}}
 [hidden]{display:none!important}
+.txt,.form input[type=text],.form select{font:inherit;font-size:12.5px;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:4px 6px;min-width:0;width:100%;box-sizing:border-box}
+.form{display:grid;grid-template-columns:96px minmax(0,1fr);gap:7px 8px;align-items:center;font-size:12.5px}
+.form label{color:var(--muted)}
+.form .full{grid-column:1/-1}
+.facts{display:grid;grid-template-columns:96px minmax(0,1fr);gap:4px 8px;font-size:12.5px;margin:0}
+.facts dt{color:var(--muted)}.facts dd{margin:0;font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
+.slotline{font-size:11.5px;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
+.slotline select{max-width:170px}
+.btn:disabled{opacity:.55;cursor:progress}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -71,14 +80,26 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
   <aside class="rail">
     <div>
       <h1>Minifig Part Viewer</h1>
-      <p class="sub">Standard minifig body from <span style="font-family:var(--mono)">SUPER_MINIFIG_DX11.GHG</span>. Loaded with the 212th Airborne Clone Trooper as an example.</p>
+      <p class="sub">Standard minifig body from <span style="font-family:var(--mono)">SUPER_MINIFIG_DX11.GHG</span>. Loaded with the 212th Airborne Clone Trooper as an example. Drop a character's <span style="font-family:var(--mono)">.prefab_baked</span> to make a new character from it.</p>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn primary" id="addFiles">Load files…</button>
       <button class="btn" id="clearAll">Plain minifig</button>
-      <input type="file" id="fileInput" multiple hidden accept=".dds,.texture,.png,.jpg,.jpeg,.webp,.gsc,.ghg,.DDS,.TEXTURE,.GSC,.GHG">
+      <input type="file" id="fileInput" multiple hidden accept=".dds,.texture,.png,.jpg,.jpeg,.webp,.gsc,.ghg,.prefab_baked,.scene_baked,.pc_shaders,.nxg_textures,.DDS,.TEXTURE,.GSC,.GHG,.PREFAB_BAKED,.SCENE_BAKED,.PC_SHADERS,.NXG_TEXTURES">
+      <input type="file" id="iconInput" hidden accept="image/*">
     </div>
     <p class="hint">Drop textures (<kbd>.texture</kbd>, <kbd>.dds</kbd>, <kbd>.png</kbd>) or models (<kbd>.gsc</kbd>, <kbd>.ghg</kbd>) anywhere. A texture goes to the part its file name names (FRONT, ARM LEFT, HIP, HAT, SATCHEL…), and <kbd>_NRM</kbd>, <kbd>_BRDF</kbd> or <kbd>_EMISSIVE</kbd> in the name picks the map. Click a name to open its material and choose each texture's UV set.</p>
+    <section id="charSec" hidden>
+      <h2>Character</h2>
+      <dl class="facts">
+        <dt>Base</dt><dd id="charBase"></dd>
+        <dt>Abilities</dt><dd>from the base: its moves, voice, weapon and class abilities come with the prefab</dd>
+        <dt>Roster row</dt><dd id="charRow"></dd>
+        <dt>Preview</dt><dd id="charScene"></dd>
+      </dl>
+      <p class="hint" id="charNeed" style="margin-top:8px"></p>
+      <p class="hint" style="margin-top:6px">Change colours and textures below. A part's <b>Model…</b> button swaps its model; unticking a part leaves it out. The character can only use the part slots its base has.</p>
+    </section>
     <section>
       <h2>Body</h2>
       <div class="rows" id="bodyRows"></div>
@@ -88,6 +109,20 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <h2>Parts</h2>
       <div class="rows" id="partList" style="gap:8px"></div>
       <p class="hint" id="noParts" hidden>No parts loaded. Add a helmet (<kbd>.gsc</kbd>) or a skinned attachment (<kbd>.ghg</kbd>).</p>
+    </section>
+    <section id="exportSec" hidden>
+      <h2>Export as a mod</h2>
+      <div class="form">
+        <label for="expName">Name</label><input type="text" id="expName" placeholder="Shown in the roster" autocomplete="off">
+        <label for="expDesc">Description</label><input type="text" id="expDesc" placeholder="Optional" autocomplete="off">
+        <label for="expFaction">Faction</label><select id="expFaction"></select>
+        <label for="expId">Character ID</label><input type="text" id="expId" placeholder="e.g. AIRBORNE" autocomplete="off" spellcheck="false">
+        <label for="expMod">Mod folder</label><input type="text" id="expMod" placeholder="e.g. airborne-trooper" autocomplete="off" spellcheck="false">
+        <label>Icon</label><div style="display:flex;gap:8px;align-items:center;min-width:0"><button class="btn icon" id="expIconBtn">Choose…</button><span class="tex" id="expIconName">none</span></div>
+        <label for="expPreview">Preview slot</label><input type="text" id="expPreview" value="TC14" autocomplete="off" spellcheck="false" title="Hidden roster entry whose preview slot the new character borrows (used only with a preview scene)">
+        <p class="hint full">Internal file name <span class="tex" id="internalName"></span> keeps the base's length. The ZIP holds one mod folder for the Mod Manager, with the prefab, your new textures and models, and mod.json (needs v1).</p>
+        <div class="full"><button class="btn primary" id="exportBtn">Export mod ZIP</button></div>
+      </div>
     </section>
   </aside>
   <main class="stage" id="stage">
