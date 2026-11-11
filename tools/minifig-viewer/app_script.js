@@ -44,7 +44,8 @@ function initGL(){
   gl.uniform1i(uni.mC,0);gl.uniform1i(uni.mN,1);gl.uniform1i(uni.mB,2);gl.uniform1i(uni.mE,3);
   const one=(rgba)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(rgba));return t;};
   whiteTex=one([255,255,255,255]);flatNormalTex=one([128,128,255,255]);
-  gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);}
+  gl.enable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.frontFace(gl.CW);   // the mirrored view turns the winding round
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);}
 try{if(gl)initGL();else say('This browser cannot show 3D: WebGL is turned off or unavailable.',true);}catch(e){say('3D setup failed: '+e.message,true);}
 function normals(pos,idx){const n=new Float32Array(pos.length);for(let i=0;i<idx.length;i+=3){const a=idx[i]*3,b=idx[i+1]*3,c=idx[i+2]*3;
   const ux=pos[b]-pos[a],uy=pos[b+1]-pos[a+1],uz=pos[b+2]-pos[a+2],vx=pos[c]-pos[a],vy=pos[c+1]-pos[a+1],vz=pos[c+2]-pos[a+2];
@@ -187,6 +188,7 @@ function renderBodyRows(){const box=$('bodyRows');box.textContent='';
 const parts=[];let partSeq=0;
 function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)return {y:0};
   if(/HAT|HELMET|HAIR/.test(n))return {y:0.3742};      // helmet height used by the clone trooper prefabs
+  if(/FACE/.test(n))return {y:0.2999};                 // face models (super_face) sit on the head
   if(/PAULDRON/.test(n))return {y:0.2891};             // neck locator
   if(/SKIRT|KAMA/.test(n))return {y:0.104};
   return {y:model.skinned?0:0.3742};}
@@ -298,9 +300,10 @@ function loadCharacter(name,bytes){
     s.refs=refsOf(C,C.body,PF.BODY_TEX_IDS[id]||ids);index(s.refs);
     s.color=tintOf(C,C.body,ids)||slots[id].defColor;s.origColor=s.color;paintColor(s);}
   for(const r of C.attachments){const skinned=/\.ghg$/i.test(r.model.path);
-    const place=(!skinned&&r.transform)?{x:r.transform.local[0],y:r.transform.local[1],z:r.transform.local[2]}:null;
+    // every attachment sits where its entity puts it (faces on the head, skirts at the hips)
+    const place=r.transform?{x:r.transform.local[0],y:r.transform.local[1],z:r.transform.local[2]}:null;
     const p=addPart(baseFile(r.model.path),null,{color:tintOf(C,r)||'#f2f2f0',place,collapsed:true});
-    if(skinned)Object.assign(p.place,defaultPlacement(r.model.path,{skinned:true}));
+    if(!place)Object.assign(p.place,defaultPlacement(r.model.path,{skinned}));
     Object.assign(p,{entity:r.entity,origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
       visible:r.enabled,origEnabled:r.enabled,rigid:!skinned,origPlace:{...p.place},origColor:p.surface.color});
     p.surface.refs=refsOf(C,r);index(p.surface.refs);
@@ -318,7 +321,7 @@ function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model)
     const names=PF.specialNames(bytes);
     p.newModel={name,bytes,path,selfPath:PF.selfPath(bytes),names};p.name=name;
     p.special=/\.ghg$/i.test(path)?'[All Specials]':(names[0]||'[All Specials]');
-    p.rigid=!/\.ghg$/i.test(path);if(!p.rigid)Object.assign(p.place,defaultPlacement(name,model));
+    p.rigid=!/\.ghg$/i.test(path);if(!p.rigid&&!p.origPlace)Object.assign(p.place,defaultPlacement(name,model));
     expanded.add('p'+p.id);}
   else p.name=name;}
 
