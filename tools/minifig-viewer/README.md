@@ -8,3 +8,5 @@ game textures (`.texture`, BC1/BC3/BC7 `.dds`, PNG) and models (`.gsc` rigid, `.
 - `model.js`: HSEM reader; keeps textured lists (skinned lists only for GHG), merges detail levels by matching bounds.
 - The page is `head.html` + `data_block.html` (placeholders filled with the three scripts and `assets.js`) + `app_script.js`; plain WebGL, no libraries.
 - Default heights: helmets 0.3742 (clone prefab hat height), pauldron 0.2891 (Neck_Locator), skirts/kamas 0.104, other skinned models 0.
+- Materials hold four maps (colour, normal, BRDF, emission), each with its own UV set (UV 1 = first pair of uvSet01, UV 2 = second pair, the print layer) and a vertical flip. File-name suffixes `_NRM`, `_BRDF`, `_EMISSIVE` pick the map.
+- BRDF is read as R = specular strength, G = roughness (game BRDF maps: plastic helmet G≈8, fabric G≈52-67); B is not used. Normal maps default to DirectX green (Y down).

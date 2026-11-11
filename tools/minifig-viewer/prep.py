@@ -9,11 +9,11 @@ d=open(A+'b75357a0-SUPER_MINIFIG_DX11.GHG','rb').read(); p,r,e=gsc.parse(d); L=r
 SLOTS=[(0,'head'),(3,'hands'),(4,'arm_l'),(5,'arm_r'),(6,'body_front'),(7,'body_back'),(10,'waist'),(12,'hips'),(11,'leg_r'),(13,'leg_l'),(15,'neck')]
 parts=[]
 for i,slot in SLOTS:
-    P=p[i]; pos=[];uv=[]
+    P=p[i]; pos=[];uv=[];uv0=[]
     for j in range(P['voff'],P['voff']+P['vcnt']):
-        o=L['data']+j*L['stride']; pos+=struct.unpack_from('<3e',d,o); uv+=struct.unpack_from('<4e',d,o+20)[2:4]
+        o=L['data']+j*L['stride']; pos+=struct.unpack_from('<3e',d,o); q4=struct.unpack_from('<4e',d,o+20); uv+=q4[2:4]; uv0+=q4[0:2]
     ix=np.frombuffer(d,'<u2',P['icnt'],I['data']+2*P['ioff'])
-    parts.append({'slot':slot,'pos':b64(np.array(pos,np.float32)),'uv':b64(np.array(uv,np.float32)),'idx':b64(ix.astype(np.uint16))})
+    parts.append({'slot':slot,'pos':b64(np.array(pos,np.float32)),'uv':b64(np.array(uv,np.float32)),'uv0':b64(np.array(uv0,np.float32)),'idx':b64(ix.astype(np.uint16))})
 # ---- sample textures (the 212th airborne trooper), shrunk to 512 px PNG
 def game_tex(path):
     t=open(path,'rb').read(); c1=struct.unpack('>I',t[0:4])[0]+4; rt=t.find(b'RTXT',c1)
@@ -32,7 +32,9 @@ tex={'body_front':png(game_tex(T+'BODY/BODY_CT212KAMA_FRONT_DIFF_DX11.texture'))
      'leg_l':png(game_tex(T+'LEG/LEG_CT212KAMA_LEFT_DIFF_DX11.texture')),'leg_r':png(game_tex(T+'LEG/LEG_CT212KAMA_RIGHT_DIFF_DX11.texture')),
      'hips':png(game_tex(T+'HIP/HIP_CT212KAMA_DIFF_DX11.texture')),
      'helmet':png(game_tex(T+'HAT/HAT_CT212KAMA_DIFF_DX11.texture')),
-     'kama':png(Image.open(A+'36a78509-KAMA_AIRBORN.dds').convert('RGBA'))}
+     'kama':png(Image.open(A+'36a78509-KAMA_AIRBORN.dds').convert('RGBA')),
+     'helmet_nrm':png(game_tex(T+'HAT/HAT_CT212KAMA_NRM_DX11.texture')),'helmet_brdf':png(game_tex(T+'HAT/HAT_CT212KAMA_BRDF_DX11.texture')),
+     'satchel_nrm':png(game_tex(A+'3d6e21d6-ADDITIONALMODEL_SATCHEL_NRM_DX11.TEXTURE')),'satchel_brdf':png(game_tex(A+'3dbf068b-ADDITIONALMODEL_SATCHEL_BRDF_DX11.TEXTURE'),256)}
 models={'helmet':b64(open(B+'CHARS/SUPER_CHARACTER/HAT/HAT_CT212KAMA_DX11.GSC','rb').read()),
         'satchel':b64(open(A+'8ce82ed0-ADDITIONALMODEL_SATCHEL_DX11.GHG','rb').read()),
         'kama':b64(open(B+'CHARS/SUPER_CHARACTER/SKINNEDSKIRT/SKINNEDSKIRT_FABRIC_KAMACT212_DX11.GHG','rb').read())}

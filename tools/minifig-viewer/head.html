@@ -26,7 +26,17 @@ h2{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:var(--mute
 .row{display:grid;grid-template-columns:96px 28px 1fr auto;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;border:1px solid transparent}
 .row.target{border-color:var(--accent);background:var(--chip)}
 .row .name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
-.row .tex{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .name{font:inherit;font-size:13px;color:var(--fg);background:none;border:0;padding:0;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.name::before,.pname::before{content:"▸ ";color:var(--muted);font-size:10px}
+.name[aria-expanded="true"]::before,.pname[aria-expanded="true"]::before{content:"▾ "}
+.slot{display:flex;flex-direction:column;gap:2px}
+.maps{display:flex;flex-direction:column;gap:5px;padding:6px 6px 8px 10px;margin-left:6px;border-left:2px solid var(--line)}
+.maprow{display:grid;grid-template-columns:62px minmax(0,1fr) auto auto auto auto;gap:5px;align-items:center}
+.mlabel{font-size:12px;color:var(--muted)}
+.mini{display:flex;gap:4px;align-items:center;font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.sub2{margin-left:67px;white-space:normal;line-height:1.3}
+select{font:inherit;font-size:12px;color:var(--fg);background:var(--chip);border:1px solid var(--line);border-radius:5px;padding:2px 3px}
+.tex{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);border-radius:5px;background:none;cursor:pointer}
 .btn{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:6px;padding:5px 9px;cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--muted)}
@@ -35,7 +45,7 @@ input[type=color]{width:28px;height:24px;padding:0;border:1px solid var(--line);
 .btn:focus-visible,input:focus-visible,.row .name:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .part{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px}
 .part-head{display:flex;align-items:center;gap:8px;min-width:0}
-.part-head .pname{font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.part-head .pname{font:inherit;background:none;border:0;padding:0;text-align:left;cursor:pointer;color:var(--fg);font-family:var(--mono);font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .part-grid{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;font-size:12px;color:var(--muted)}
 .part-grid input[type=range]{width:100%}
 .part-grid output{font-family:var(--mono);font-size:11px;color:var(--fg);min-width:52px;text-align:right;font-variant-numeric:tabular-nums}
@@ -53,6 +63,7 @@ canvas#view{display:block;width:100%;height:100%}
 kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px solid var(--line);border-radius:4px;padding:0 4px}
 @media (max-width:760px){.app{grid-template-columns:1fr;grid-template-rows:56vh auto;height:auto}
   .stage{grid-row:1;height:56vh}.rail{grid-row:2;border-right:0;border-top:1px solid var(--line);padding-right:max(16px,env(safe-area-inset-right,0px))}}
+[hidden]{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -67,7 +78,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <button class="btn" id="clearAll">Plain minifig</button>
       <input type="file" id="fileInput" multiple hidden accept=".dds,.texture,.png,.jpg,.jpeg,.webp,.gsc,.ghg,.DDS,.TEXTURE,.GSC,.GHG">
     </div>
-    <p class="hint">Drop textures (<kbd>.texture</kbd>, <kbd>.dds</kbd>, <kbd>.png</kbd>) or models (<kbd>.gsc</kbd>, <kbd>.ghg</kbd>) anywhere. Textures go where their file name says (FRONT, BACK, ARM LEFT, LEG RIGHT, HIP, HAT…); otherwise to the highlighted row. Click a row's name to highlight it.</p>
+    <p class="hint">Drop textures (<kbd>.texture</kbd>, <kbd>.dds</kbd>, <kbd>.png</kbd>) or models (<kbd>.gsc</kbd>, <kbd>.ghg</kbd>) anywhere. A texture goes to the part its file name names (FRONT, ARM LEFT, HIP, HAT, SATCHEL…), and <kbd>_NRM</kbd>, <kbd>_BRDF</kbd> or <kbd>_EMISSIVE</kbd> in the name picks the map. Click a name to open its material and choose each texture's UV set.</p>
     <section>
       <h2>Body</h2>
       <div class="rows" id="bodyRows"></div>
