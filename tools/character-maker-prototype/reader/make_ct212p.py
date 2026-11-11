@@ -81,8 +81,10 @@ TX['arm_left']=add_texture('arm','arm_ct212kama_left_diff',texture_from_dds(open
 TX['arm_right']=add_texture('arm','arm_ct212kama_right_diff',texture_from_dds(open(att('ARMS_CLONE_212_RIGHT_DIFF_DX11.dds'),'rb').read()))
 TX['hip']=add_texture('hip','hip_ct212kama_diff',texture_from_dds(open(att('HIP_CT_KAMA_DIFF_DX11.dds'),'rb').read()))
 TX['hat_diff']=add_texture('hat','hat_ct212kama_diff',open(att('HAT_AIRBORN_212_DIFF_DX11.texture'),'rb').read())
-TX['hat_nrm']=add_texture('hat','hat_ct212kama_nrm',open(att('HAT_AIRBORN_NRM_DX11.texture'),'rb').read())
-TX['hat_brdf']=add_texture('hat','hat_ct212kama_brdf',open(att('HAT_AIRBORN_BDRF_DX11.texture'),'rb').read())
+# helmet normal, roughness and sand (weather) maps: the user's 4K BC7 set
+TX['hat_nrm']=add_texture('hat','hat_ct212kama_nrm',texture_from_dds(open(att('HAT_AIRBORNE_NRM_DX11.dds'),'rb').read()))
+TX['hat_brdf']=add_texture('hat','hat_ct212kama_brdf',texture_from_dds(open(att('HAT_AIRBORNE_BRDF_DX11.dds'),'rb').read()))
+TX['hat_sand']=add_texture('weather/hat','hat_ct212kama_sand',texture_from_dds(open(att('HAT_AIRBORN_SAND_DX11.dds'),'rb').read()))
 
 # ---------- helmet model: the airborne GSC under its own name, with texture/shader files named after it ----------
 HAT='hat_ct212kama'
@@ -138,6 +140,9 @@ for rel,data in pfiles.items():
 SATCHEL='chars/super_character/additionalmodel/additionalmodel_satchel'
 SATCHEL_RGB=(0.098,0.023,0.006)   # LEGO reddish brown, linear
 if HAS_SAT:
+    TX['sat_nrm']=add_texture('additionalmodel','additionalmodel_satchel_ct212_nrm',open(att('ADDITIONALMODEL_SATCHEL_NRM_DX11.TEXTURE'),'rb').read())
+    TX['sat_brdf']=add_texture('additionalmodel','additionalmodel_satchel_ct212_brdf',open(att('ADDITIONALMODEL_SATCHEL_BRDF_DX11.TEXTURE'),'rb').read())
+    TX['sat_sand']=add_texture('weather/additionalmodel','additionalmodel_satchel_ct212_sand',open(att('ADDITIONALMODEL_SATCHEL_SAND_DX11.TEXTURE'),'rb').read())
     for ext in ('GHG','PC_SHADERS','NXG_TEXTURES'):
         resources.append(put(f'{SATCHEL.upper()}_DX11.{ext}',open(att(f'ADDITIONALMODEL_SATCHEL_DX11.{ext}'),'rb').read()))
 print('this character wears the',SIDE,'pauldron:',PLD)
@@ -206,7 +211,9 @@ def patch(src,is_prefab):
            'chars/super_character_texture/arm/arm_caribdiss_right_diff.texture':TX['arm_right'],
            'chars/super_character_texture/hip/hip_caribdiss_diff.texture':TX['hip'],
            'chars/super_character_texture/hat/hat_caribdiss_norm.texture':TX['hat_nrm'],
-           'chars/super_character_texture/hat/hat_caribdiss_brdf.texture':TX['hat_brdf']}
+           'chars/super_character_texture/hat/hat_caribdiss_brdf.texture':TX['hat_brdf'],
+           'chars/super_character_texture/weather/hat/hat_caribdiss_sand.texture':TX['hat_sand']}
+    if HAS_SAT: swaps['chars/super_character_texture/weather/torso_attachment/torsoattachment_caribdiss_sand.texture']=TX['sat_sand']
     for old,new in swaps.items():
         ps=handle_at_path(old); assert ps, old
         for p in ps: edits.append((p,handle_len(p),handle_bytes(new,NEW_TEX[new][1])))
@@ -272,9 +279,16 @@ def patch(src,is_prefab):
         print('additional model -> satchel (render and skeleton):',len(ps))
         rt=[x for x in O if x['path']=='AdditionalModel_CaribDiss' and x['class']=='nttRenderTTExportObject'][0]
         DS=Dec(bytes(d)); DS.trace=[]; DS.mobj(R(bytes(d),rt['o']),struct.unpack_from('<I',d,rt['o']-4)[0]); assert not DS.bad
-        for sl in ('diffuse_0','normal_0','specular_0'):   # CaribDiss's own torso textures do not fit the bag's UVs
+        # CaribDiss's own torso textures do not fit the bag's UVs: no diffuse (the colour comes from the tint),
+        # the satchel's own normal and roughness maps
+        for sl,new in (('diffuse_0',None),('normal_0',TX['sat_nrm']),('specular_0',TX['sat_brdf'])):
             q=[q for n_,k_,q in DS.trace if n_==sl][1]
-            if d[q+4]: edits.append((q,handle_len(q),b'\x02\x00\x00\x00\x00'))
+            edits.append((q,handle_len(q),b'\x02\x00\x00\x00\x00' if new is None else handle_bytes(new,NEW_TEX[new][1])))
+        # CaribDiss's extra model lifts the Neck joint by 1 cm (AttachmentOffsetComponent): with the satchel in that
+        # entity the whole head sat too high, showing the neck. No lift.
+        ao=[x for x in O if x['path']=='AdditionalModel_CaribDiss' and x['class']=='AttachmentOffsetComponent'][0]
+        DA=Dec(bytes(d)); DA.trace=[]; DA.mobj(R(bytes(d),ao['o']),struct.unpack_from('<I',d,ao['o']-4)[0])
+        op=[p for n_,k_,p in DA.trace if n_=='Offset'][0]; print('neck lift',struct.unpack_from('<3f',d,op),'-> 0'); struct.pack_into('<3f',d,op,0,0,0)
         satchel_rt=rt
     if SLOT=='satchel':
         # the template's face sits higher than a clone's (the helmet was lowered by the same amount above)
