@@ -110,7 +110,7 @@ $('front').onclick=()=>view(1);$('back').onclick=()=>view(-1);
 
 // ---------- materials: base colour + print in the colour map, then optional normal, BRDF and emission maps
 const pot=(v)=>{let p=4;while(p<v&&p<1024)p*=2;return p;};
-function makeSurface(color,hasUV1){const maps={};for(const [k] of MAPS)maps[k]={img:null,name:'',uv:(k=='color'&&hasUV1)?1:0,flip:false,glTex:null,dirty:true,dx:true};
+function makeSurface(color,hasUV1){const maps={};for(const [k] of MAPS)maps[k]={img:null,name:'',uv:(k!='color'&&hasUV1)?1:0,flip:false,glTex:null,dirty:true,dx:true};
   const c=document.createElement('canvas');c.width=c.height=4;const s={color,maps,canvas:c,glTex:null,dirty:true};paintColor(s);return s;}
 function paintColor(s){const m=s.maps.color,w=m.img?pot(m.img.width):4,h=m.img?pot(m.img.height):4;s.canvas.width=w;s.canvas.height=h;
   const g=s.canvas.getContext('2d');g.fillStyle=s.color;g.fillRect(0,0,w,h);if(m.img)g.drawImage(m.img,0,0,w,h);s.dirty=true;}
@@ -234,7 +234,7 @@ async function loadExample(){
   setMap(helm.surface,'color',await imgFromURL(SAMPLE_TEX.helmet),'HAT_CT212KAMA_DIFF (example)');
   setMap(helm.surface,'normal',await imgFromURL(SAMPLE_TEX.helmet_nrm),'HAT_AIRBORNE_NRM (example)');
   setMap(helm.surface,'brdf',await imgFromURL(SAMPLE_TEX.helmet_brdf),'HAT_AIRBORNE_BRDF (example)');
-  const kama=addPart('SKINNEDSKIRT_FABRIC_KAMACT212_DX11.GHG',parseModel(b64(SAMPLE_MODELS.kama)));kama.surface.maps.color.uv=0;
+  const kama=addPart('SKINNEDSKIRT_FABRIC_KAMACT212_DX11.GHG',parseModel(b64(SAMPLE_MODELS.kama)));
   setMap(kama.surface,'color',await imgFromURL(SAMPLE_TEX.kama),'KAMA_AIRBORN (example)');
   const sat=addPart('ADDITIONALMODEL_SATCHEL_DX11.GHG',parseModel(b64(SAMPLE_MODELS.satchel)),{color:'#582a12'});paintColor(sat.surface);
   setMap(sat.surface,'normal',await imgFromURL(SAMPLE_TEX.satchel_nrm),'ADDITIONALMODEL_SATCHEL_NRM (example)');
