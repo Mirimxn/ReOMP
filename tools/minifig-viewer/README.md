@@ -19,3 +19,13 @@ game textures (`.texture`, BC1/BC3/BC7 `.dds`, PNG) and models (`.gsc` rigid, `.
 - Export: textures are retargeted (`.texture`), wrapped (BC7 `.dds`) or encoded to BC7 mode 6 with mips (`tex_template.js` holds a game BC7 texture header); the ZIP holds one mod folder with `mod.json` (`v1/register-custom-resource-action` per file, then `v1/register-custom-vehicle-action` on the `Characters` table, `CharacterClass` override for the faction) and the preview scene when its `_cheapminifig.scene_baked` was loaded.
 - Checked by re-reading exports with the Python decoder: same object count and decode results as the base, root and `OLST` sizes consistent, records added.
 - `build.py` assembles `minifig-part-viewer.html`.
+
+## Game folder and archives
+
+- `gamedat.js` (`DAT`): reads TT `.DAT` archives in place with `File.slice` (port of DATExtract's new-format reader: header at the end, name tree, 64-bit FNV-1a path hashes mapping names to entries). Chunks: `DFLT` is raw deflate whose block types 0 and 2 are swapped (0 = dynamic, 2 = stored), checked against every entry of `CP_CLONEWARS.DAT` and `CP_1STPARTYPURCHASE.DAT`; `OODL` goes to ooz built to WebAssembly (`ooz-wasm/build.sh`, checked on ooz's Kraken/Mermaid/Selkie/Leviathan/LZNA/BitKnit test files; not yet checked on a `GAME*.DAT`).
+- The game folder is opened with the folder picker (handle kept in IndexedDB, reopened with one click) or, where the page cannot use it, a folder file list. Later archives win; loose files win over archives.
+- A character loaded with the game connected pulls its models, prints, normal/BRDF maps and preview scene from the game; the plain body gets the standard minifig normal/BRDF maps.
+- Game texture format codes: 1 BC1, 6 BC3 (DXT5), 0x1f BC7.
+- The view is mirrored in X: the game's coordinates are left-handed.
+- UV defaults: a colour map from the print layer (`diffuse_1`) uses the first UV pair; one from the base layer (`diffuse_0`: torso attachments, pauldrons, face textures) the second; normal and BRDF maps the second.
+- Head: Up is the 1 cm neck lift some characters carry (an `AttachmentOffsetComponent` on `Neck`); the export writes it when the base has that component.

@@ -73,6 +73,18 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
 .slotline{font-size:11.5px;display:flex;align-items:center;flex-wrap:wrap;gap:4px}
 .slotline select{max-width:170px}
 .btn:disabled{opacity:.55;cursor:progress}
+.game-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:8px}
+.results{display:flex;flex-direction:column;gap:2px;max-height:260px;overflow:auto;margin-top:6px;border:1px solid var(--line);border-radius:6px;padding:3px}
+.results:empty{display:none}
+.hit{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;font:inherit;border:0;background:none;color:var(--fg);padding:4px 6px;border-radius:4px;cursor:pointer;min-width:0}
+.hit:hover,.hit:focus-visible{background:var(--chip)}
+.hit-name{font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
+.hit-dir{font-size:10.5px;color:var(--muted);overflow-wrap:anywhere}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{font:inherit;font-size:12px;border:0;background:var(--chip);color:var(--fg);padding:4px 9px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg)}
+.headrow{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:12.5px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -87,8 +99,24 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <button class="btn" id="clearAll">Plain minifig</button>
       <input type="file" id="fileInput" multiple hidden accept=".dds,.texture,.png,.jpg,.jpeg,.webp,.gsc,.ghg,.prefab_baked,.scene_baked,.pc_shaders,.nxg_textures,.DDS,.TEXTURE,.GSC,.GHG,.PREFAB_BAKED,.SCENE_BAKED,.PC_SHADERS,.NXG_TEXTURES">
       <input type="file" id="iconInput" hidden accept="image/*">
+      <input type="file" id="dirInput" hidden webkitdirectory multiple>
     </div>
     <p class="hint">Drop textures (<kbd>.texture</kbd>, <kbd>.dds</kbd>, <kbd>.png</kbd>) or models (<kbd>.gsc</kbd>, <kbd>.ghg</kbd>) anywhere. A texture goes to the part its file name names (FRONT, ARM LEFT, HIP, HAT, SATCHEL…), and <kbd>_NRM</kbd>, <kbd>_BRDF</kbd> or <kbd>_EMISSIVE</kbd> in the name picks the map. Click a name to open its material and choose each texture's UV set.</p>
+    <section id="gameSec">
+      <h2>Game files</h2>
+      <div id="gameOff">
+        <p class="hint">Connect the game's install folder to open characters, parts and textures straight from its archives, without extracting them. Chrome may ask to “upload” the folder: nothing leaves your computer.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="btn" id="gameConnect">Connect game folder…</button><button class="btn" id="gameReconnect" hidden>Reopen</button></div>
+      </div>
+      <div id="gameOn" hidden>
+        <p class="hint" id="gameInfo"></p>
+        <div class="game-search"><input type="text" class="txt" id="gameSearch" placeholder="Search: clonetrooper prefab, hat_, kama…" aria-label="Search the game files" autocomplete="off" spellcheck="false">
+          <select id="gameKind" class="txt" aria-label="File type" style="width:auto"><option value="">All</option><option value="\.prefab_baked$">Characters</option><option value="\.(gsc|ghg)$">Models</option><option value="\.texture$">Textures</option></select></div>
+        <p class="hint" id="gameCount" style="margin-top:4px"></p>
+        <div class="results" id="gameResults"></div>
+        <div style="margin-top:6px"><button class="btn icon" id="gameForget">Disconnect</button></div>
+      </div>
+    </section>
     <section id="charSec" hidden>
       <h2>Character</h2>
       <dl class="facts">
@@ -103,6 +131,8 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
     <section>
       <h2>Body</h2>
       <div class="rows" id="bodyRows"></div>
+      <div class="headrow"><span id="headLbl">Head</span><div class="seg" role="group" aria-labelledby="headLbl" id="headSeg"><button data-h="up" aria-pressed="false">Up</button><button data-h="normal" aria-pressed="true">Normal</button><button data-h="hidden" aria-pressed="false">Hidden</button></div></div>
+      <p class="hint" id="headNote" style="margin-top:4px"></p>
       <div class="checks" style="margin-top:8px"><label><input type="checkbox" id="swapLR"> Swap left and right textures</label></div>
     </section>
     <section>

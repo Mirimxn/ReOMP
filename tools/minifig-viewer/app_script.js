@@ -87,14 +87,18 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
   gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   if(spinning)figRot+=0.006;
   const eye=[cam.tgt[0]+cam.dist*Math.cos(cam.el)*Math.sin(cam.az),cam.tgt[1]+cam.dist*Math.sin(cam.el),cam.tgt[2]+cam.dist*Math.cos(cam.el)*Math.cos(cam.az)];
-  const vp=M.mul(M.persp(30*Math.PI/180,w/h,0.01,20),M.look(eye,cam.tgt,[0,1,0]));
+  // the game's coordinates are left-handed: mirror the screen so left and right match the game
+  const pr=M.persp(30*Math.PI/180,w/h,0.01,20);pr[0]=-pr[0];const vp=M.mul(pr,M.look(eye,cam.tgt,[0,1,0]));
   if(!disc){const k=48,pos=[0,-0.001,0],uv=[0,0],idx=[];for(let i=0;i<=k;i++){const a=i/k*Math.PI*2;pos.push(Math.cos(a)*0.3,-0.001,Math.sin(a)*0.3);uv.push(0,0);if(i)idx.push(0,i,i+1);}
     disc=geom(new Float32Array(pos),new Float32Array(uv),null,new Uint16Array(idx));}
   const m0=M.model(0,0,0,0);gl.depthMask(false);drawMesh(disc,M.mul(vp,m0),m0,eye,null,[0,0,0,0.10]);gl.depthMask(true);
-  const mb=M.model(figRot,0,0,0),mvpb=M.mul(vp,mb);
-  for(const m of bodyMeshes){if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvpb,mb,eye,null,[c[0],c[1],c[2],1]);}
+  const mb=M.model(figRot,0,0,0),mvpb=M.mul(vp,mb);const dy=headMode=='up'?HEAD_UP:0;
+  const mh=M.model(figRot,0,dy,0),mvph=M.mul(vp,mh);
+  for(const m of bodyMeshes){const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;
+    if(onHead){if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvph,mh,eye,null,[c[0],c[1],c[2],1]);}else drawMesh(m.g,mvph,mh,eye,slots[slotFor(m.slot)].surface);continue;}
+    if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvpb,mb,eye,null,[c[0],c[1],c[2],1]);}
     else drawMesh(m.g,mvpb,mb,eye,slots[slotFor(m.slot)].surface);}
-  for(const p of parts){if(!p.visible)continue;const mp=M.model(figRot,p.place.x,p.place.y,p.place.z),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
+  for(const p of parts){if(!p.visible)continue;const mp=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
 const ptrs=new Map();let lastPinch=0;
 canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);});
@@ -103,7 +107,7 @@ canvas.addEventListener('contextmenu',(e)=>e.preventDefault());
 canvas.addEventListener('pointermove',(e)=>{if(!ptrs.has(e.pointerId))return;const [x,y,pan]=ptrs.get(e.pointerId);const dx=e.clientX-x,dy=e.clientY-y;ptrs.set(e.pointerId,[e.clientX,e.clientY,pan]);
   if(ptrs.size==2){const [a,b]=[...ptrs.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(lastPinch)cam.dist=Math.min(3,Math.max(0.15,cam.dist*lastPinch/d));lastPinch=d;return;}
   if(pan){cam.tgt[1]=Math.min(0.6,Math.max(-0.1,cam.tgt[1]+dy*0.001*cam.dist));return;}
-  cam.az-=dx*0.008;cam.el=Math.min(1.45,Math.max(-1.2,cam.el+dy*0.006));});
+  cam.az+=dx*0.008;cam.el=Math.min(1.45,Math.max(-1.2,cam.el+dy*0.006));});
 canvas.addEventListener('wheel',(e)=>{e.preventDefault();cam.dist=Math.min(3,Math.max(0.15,cam.dist*Math.exp(e.deltaY*0.001)));},{passive:false});
 $('spin').onclick=()=>{spinning=!spinning;$('spin').setAttribute('aria-pressed',spinning);$('spin').classList.toggle('primary',spinning);};
 $('front').onclick=()=>view(1);$('back').onclick=()=>view(-1);
@@ -127,6 +131,15 @@ async function loadImage(file){const n=file.name.toLowerCase();const buf=await f
   const c=document.createElement('canvas');c.width=r.w;c.height=r.h;c.getContext('2d').putImageData(new ImageData(r.rgba,r.w,r.h),0,0);return c;}
 function imgFromURL(url){return new Promise((res,rej)=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');c.width=i.width;c.height=i.height;c.getContext('2d').drawImage(i,0,0);res(c);};i.onerror=()=>rej(new Error('bad image'));i.src=url;});}
 
+// ---------- head height: some characters lift the neck joint by 1 cm, raising the head and everything on it
+const HEAD_UP=0.01;let headMode='normal';
+const followsHead=(p)=>/^(hat|hair|facetex|head|helmet)/i.test(p.entity||p.name)||/\/(hat|hair|facetex)\//i.test(p.newModel?p.newModel.path:(p.origModel||''));
+function setHead(m){headMode=m;for(const b of document.querySelectorAll('#headSeg button'))b.setAttribute('aria-pressed',b.dataset.h==m);
+  let note='';if(CH){if(m=='hidden')note='Hidden only here: the exported character keeps its head.';else if(!CH.C.neck&&m=='up')note=CH.C.baseName+' has no neck lift to change, so it exports at normal height.';
+    else if(CH.C.neck)note='Exported with the head '+(m=='up'?'raised by 1 cm':'at normal height')+' ('+CH.C.neck.entity+' sets the neck lift).';}
+  else if(m=='up')note='Up is the height of characters whose neck joint is lifted by 1 cm.';
+  $('headNote').textContent=note;}
+for(const b of document.querySelectorAll('#headSeg button'))b.onclick=()=>setHead(b.dataset.h);
 // ---------- body
 const b64=(s)=>{const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer;};
 const slots={};for(const [id,label,color] of SLOT_INFO)slots[id]={id,label,surface:makeSurface(color,true),defColor:color};
@@ -180,7 +193,9 @@ function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)retur
 function addPart(name,model,opts={}){
   const p={id:++partSeq,name,model,surface:makeSurface(opts.color||'#f2f2f0',model?model.hasUV1:true),meshes:[],visible:true,
     place:Object.assign({x:0,y:0,z:0},opts.place||defaultPlacement(name,model))};
-  if(model)p.meshes=meshesOf(model);parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
+  if(model)p.meshes=meshesOf(model);if(baseLayer(name))p.surface.maps.color.uv=1;parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
+// parts whose colour sits in the material's base layer (diffuse_0), which the game maps with the second UV pair
+const baseLayer=(n)=>/PAULDRON|TORSOATTACHMENT|ADDITIONALMODEL|FACETEX/i.test(n);
 function meshesOf(model){return model.pieces.map(pc=>geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx));}
 function renderParts(){const box=$('partList');box.textContent='';$('noParts').hidden=parts.length>0;
   for(const p of parts){const el=document.createElement('div');el.className='part';const key='p'+p.id;
@@ -288,11 +303,14 @@ function loadCharacter(name,bytes){
     if(skinned)Object.assign(p.place,defaultPlacement(r.model.path,{skinned:true}));
     Object.assign(p,{entity:r.entity,origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
       visible:r.enabled,origEnabled:r.enabled,rigid:!skinned,origPlace:{...p.place},origColor:p.surface.color});
-    p.surface.refs=refsOf(C,r);index(p.surface.refs);}
+    p.surface.refs=refsOf(C,r);index(p.surface.refs);
+    p.surface.maps.color.uv=(p.surface.refs.color&&p.surface.refs.color.field=='diffuse_0')?1:0;}
+  setHead(C.neck&&Math.abs(C.neck.y-HEAD_UP)<0.002?'up':'normal');CH.origHead=headMode;
   // the game's own minifig maps are useful to see but are not what a mod changes
   renderBodyRows();renderParts();renderCharacter();
   $('expName').value='';$('expId').value='';$('expMod').value='';$('expDesc').value='';
-  say('Loaded '+C.baseName+'. Drop its game textures and models to see it, then change what you like and export.');}
+  if(GAME.entries.size)setTimeout(autoLoadCharacter,0);
+  say('Loaded '+C.baseName+(GAME.entries.size?'.':'. Drop its game textures and models to see it (or connect the game folder), then change what you like and export.'));}
 
 function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);
   if(p.entity&&bytes){const path=PF.selfPath(bytes).toLowerCase();
@@ -376,6 +394,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     if(m.cleared)return null;
     return undefined;}   // unchanged
   const P=pname.toLowerCase();const plan={internalName:pname,rosterRow:'OMP_'+id,body:{},parts:[]};
+  if(C.neck&&headMode!='hidden'&&headMode!=CH.origHead)plan.neckLift=headMode=='up'?HEAD_UP:0;
   for(const [sid] of SLOT_INFO){const s=slots[sid].surface,ch={};
     if(s.color.toLowerCase()!=(s.origColor||'').toLowerCase())ch.tint=linOf(s.color);
     for(const k of ['color','normal','brdf']){const ref=s.refs&&s.refs[k];const field=k=='color'?(ref?ref.field:'diffuse_1'):k=='normal'?'normal_0':'specular_0';
@@ -427,6 +446,97 @@ async function saveFile(filename,data){
   if(dl){try{await dl.save({filename,data:new Blob([data])});return;}catch(e){if(e&&e.code=='declined')throw new Error('saving was cancelled');if(e&&e.code&&!['unavailable','not_granted','capability_disabled','capability_removed'].includes(e.code))throw new Error(e.message||e.code);}}
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/zip'}));a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}
 
+// ---------- game folder: read textures, models and characters straight from the install (archives and loose files)
+const GAME={name:'',dats:[],entries:new Map(),byName:new Map(),loose:0,handle:null,count:0};
+const WANT=/\.(texture|dds|png|gsc|ghg|prefab_baked|scene_baked|pc_shaders|nxg_textures)$/i;
+const SKIP_DIRS=/^(omp|omp-.*|\.git|_?aamods|audio|cut|levels|ui)$/i;   // runtime folders and areas with no character files
+const normPath=(p)=>p.replace(/\\/g,'/').replace(/^\/+/,'').toLowerCase();
+function addEntry(path,e){path=normPath(path);e.path=path;if(!GAME.entries.has(path))GAME.count++;GAME.entries.set(path,e);
+  const alias=path.replace(/^additionalcontent\/[^/]+\//,'');if(alias!==path&&!GAME.entries.has(alias))GAME.entries.set(alias,e);
+  const k=path.split('/').pop();const l=GAME.byName.get(k);if(l)l.push(e);else GAME.byName.set(k,[e]);}
+// a reference from a prefab (no _dx11, lower case) to the file that holds it
+function findGame(ref){ref=normPath(ref);const cands=[ref,ref.replace(/(\.[a-z_]+)$/,'_dx11$1'),ref.replace(/_dx11(\.[a-z_]+)$/,'$1')];
+  for(const c of cands){const e=GAME.entries.get(c);if(e)return e;}
+  for(const c of cands){const l=GAME.byName.get(c.split('/').pop());if(l&&l.length)return l[l.length-1];}
+  return null;}
+async function readGame(e){if(e.dat)return DAT.read(e.dat.file,e.f);const f=e.handle?await e.handle.getFile():e.file;return new Uint8Array(await f.arrayBuffer());}
+async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();return new File([await readGame(e)],name);}
+
+// remembered folder (only with the folder picker; the fallback file list cannot be kept)
+const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('minifig-viewer',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});
+async function kvGet(k){try{const db=await idb();return await new Promise((res)=>{const q=db.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(null);});}catch(e){return null;}}
+async function kvSet(k,v){try{const db=await idb();await new Promise((res)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=res;t.onerror=res;});}catch(e){}}
+async function kvDel(k){try{const db=await idb();await new Promise((res)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=res;t.onerror=res;});}catch(e){}}
+
+function resetGame(){GAME.count=0;GAME.name='';GAME.dats=[];GAME.entries=new Map();GAME.byName=new Map();GAME.loose=0;GAME.handle=null;}
+async function addDats(files){files.sort((a,b)=>a.name.localeCompare(b.name));   // later archives win, like patches
+  for(const f of files){say('Reading '+f.name+'…');try{const d=await DAT.open(f);GAME.dats.push(d);for(const x of d.files)addEntry(x.path,{dat:d,f:x,src:d.name});}
+    catch(e){console.warn(f.name,e);}}}
+async function scanHandle(dir){resetGame();GAME.name=dir.name;GAME.handle=dir;const dats=[],loose=[];
+  async function walk(h,rel,depth){for await(const [name,x] of h.entries()){
+    if(x.kind=='file'){if(depth==0&&/\.dat$/i.test(name))dats.push(await x.getFile());else if(WANT.test(name))loose.push([rel+name,x]);}
+    else if(depth<8&&!(depth==0&&SKIP_DIRS.test(name)))await walk(x,rel+name+'/',depth+1);}}
+  say('Looking through '+dir.name+'…');await walk(dir,'',0);
+  await addDats(dats);for(const [p,x] of loose)addEntry(p,{handle:x,src:'folder'});GAME.loose=loose.length;finishScan();}
+async function scanList(files){resetGame();const dats=[],loose=[];
+  for(const f of files){const rel=(f.webkitRelativePath||f.name).split('/');GAME.name=GAME.name||rel[0];const p=rel.slice(1).join('/')||f.name;
+    if(rel.length<=2&&/\.dat$/i.test(f.name))dats.push(f);else if(WANT.test(f.name)&&!SKIP_DIRS.test(rel[1]||''))loose.push([p,f]);}
+  await addDats(dats);for(const [p,f] of loose)addEntry(p,{file:f,src:'folder'});GAME.loose=loose.length;finishScan();}
+function finishScan(){renderGame();
+  if(!GAME.entries.size){say('No game archives or files found in '+GAME.name+'. Choose the game\'s install folder.',true);return;}
+  say('Game files ready: '+GAME.dats.length+' archives, '+GAME.count.toLocaleString()+' files.');
+  if(CH)autoLoadCharacter();else loadStdMaps();}
+async function connectGame(){
+  if(window.showDirectoryPicker){try{const h=await window.showDirectoryPicker({id:'lswtss',mode:'read'});await kvSet('gameDir',h);await scanHandle(h);return;}
+    catch(e){if(e&&e.name=='AbortError')return;console.warn('folder picker unavailable here',e);}}
+  $('dirInput').click();}
+$('dirInput').onchange=async(e)=>{const files=[...e.target.files];e.target.value='';if(files.length)await scanList(files);};
+$('gameConnect').onclick=connectGame;
+$('gameReconnect').onclick=async()=>{const h=GAME.saved;if(!h)return;try{if(await h.requestPermission({mode:'read'})=='granted')await scanHandle(h);}catch(e){say('Could not open '+h.name+' again: choose the folder.',true);connectGame();}};
+$('gameForget').onclick=async()=>{await kvDel('gameDir');GAME.saved=null;resetGame();renderGame();say('Game folder disconnected.');};
+(async()=>{const h=await kvGet('gameDir');if(!h||!h.queryPermission)return;GAME.saved=h;
+  try{if(await h.queryPermission({mode:'read'})=='granted'){await scanHandle(h);return;}}catch(e){}
+  renderGame();})();
+
+// what the panel shows
+function renderGame(){const on=GAME.entries.size>0;$('gameOff').hidden=on;$('gameOn').hidden=!on;
+  $('gameReconnect').hidden=on||!GAME.saved;if(GAME.saved)$('gameReconnect').textContent='Reopen '+GAME.saved.name;
+  if(on)$('gameInfo').textContent=GAME.name+' · '+GAME.dats.length+' archives · '+GAME.count.toLocaleString()+' files'+(GAME.loose?' ('+GAME.loose.toLocaleString()+' loose)':'')+(GAME.handle?'':'. This browser could not keep the folder, so choose it again next time.');
+  searchGame();}
+let searchTimer=0;$('gameSearch').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchGame,120);};
+$('gameKind').onchange=searchGame;
+function searchGame(){const box=$('gameResults');box.textContent='';if(!GAME.entries.size)return;
+  const terms=$('gameSearch').value.toLowerCase().split(/\s+/).filter(Boolean);const kind=$('gameKind').value;
+  if(!terms.length&&!kind){$('gameCount').textContent='Type part of a name: a character (cloneTrooper), a part (hat_), a texture…';return;}
+  const out=[];const seen=new Set();
+  for(const [p,e] of GAME.entries){if(p!==e.path||seen.has(e))continue;if(kind&&!new RegExp(kind,'i').test(p))continue;
+    if(terms.every(t=>p.includes(t))){seen.add(e);out.push(e);if(out.length>=150)break;}}
+  $('gameCount').textContent=out.length>=150?'First 150 matches, type more to narrow.':out.length+' match'+(out.length==1?'':'es')+'.';
+  for(const e of out){const b=document.createElement('button');b.className='hit';const n=e.path.split('/');
+    const a=document.createElement('span');a.className='hit-name';a.textContent=n.pop();const d=document.createElement('span');d.className='hit-dir';d.textContent=n.join('/')+' · '+e.src;
+    b.append(a,d);b.title='Load '+e.path;b.onclick=()=>loadFromGame([e]);box.append(b);}}
+async function loadFromGame(list){try{say('Opening '+list.map(e=>e.path.split('/').pop()).join(', ')+'…');const files=[];
+    for(const e of list)files.push(await gameFile(e));await handleFiles(files,null);}
+  catch(e){say('Could not read it: '+e.message,true);console.error(e);}}
+
+// a character from anywhere gets its models, prints, normal and BRDF maps and preview scene from the game
+async function autoLoadCharacter(){if(!CH||!GAME.entries.size)return;const want=new Map();
+  for(const p of parts)if(p.entity&&!p.model&&!p.newModel){const e=findGame(p.origModel);if(e)want.set(e.path,e);}
+  for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs)){if(o.surface.maps[k].img)continue;const e=findGame(r.path);if(e)want.set(e.path,e);}
+  if(!CH.scene){const sp=CH.C.selfPath.replace(/\.prefab_baked$/i,'_cheapminifig.scene_baked');const e=findGame(sp);if(e)want.set(e.path,e);}
+  if(!want.size)return;say('Loading '+want.size+' game files for '+CH.C.baseName+'…');
+  const files=[];for(const e of want.values()){try{files.push(await gameFile(e));}catch(err){console.warn(e.path,err);}}
+  await handleFiles(files,null);say(CH.C.baseName+' loaded from the game files.');}
+// the standard minifig's own normal and BRDF maps for the plain body and the example
+const STD_MAPS={head:['head_front','head_front'],body_front:['body_front','body_front'],body_back:['body_front','body_front'],arm_l:['left_arm','left_arm'],arm_r:['right_arm','right_arm'],
+  hands:['left_hand','right_hand'],hips:['hips','hips'],leg_l:['left_leg','left_leg'],leg_r:['right_leg','right_leg']};
+async function loadStdMaps(){if(!GAME.entries.size||CH)return;const cache=new Map();let n=0;
+  for(const [id,[nrm,brdf]] of Object.entries(STD_MAPS)){const s=slots[id].surface;
+    for(const [kind,stem] of [['normal',nrm+'_dx11_nrm'],['brdf',brdf+'_dx11_brdf']]){if(s.maps[kind].img)continue;
+      const ref='chars/super_character_texture/minifig/'+stem+'.texture';const e=findGame(ref);if(!e)continue;
+      try{if(!cache.has(e.path))cache.set(e.path,await loadImage(await gameFile(e)));setMap(s,kind,cache.get(e.path),e.path.split('/').pop().toUpperCase(),{game:{path:ref}});n++;}catch(err){console.warn(err);}}}
+  if(n){renderBodyRows();say('Minifig normal and BRDF maps loaded from the game.');}}
+
 // ---------- example: the 212th airborne clone trooper
 async function loadExample(){
   for(const id of Object.keys(slots))if(SAMPLE_TEX[id])setMap(slots[id].surface,'color',await imgFromURL(SAMPLE_TEX[id]),id.toUpperCase()+'_CT212 (example)');
@@ -443,7 +553,7 @@ async function loadExample(){
 function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;extraFiles.clear();
   for(const [id] of SLOT_INFO){const s=slots[id].surface;s.refs=null;for(const [k] of MAPS){Object.assign(s.maps[k],{img:null,name:'',dirty:true,src:null,game:null,cleared:false});}s.color=slots[id].defColor;paintColor(s);}
   renderCharacter();}
-$('clearAll').onclick=()=>{resetAll();renderBodyRows();renderParts();say('Plain minifig. Load textures, parts or a character prefab.');};
+$('clearAll').onclick=()=>{resetAll();setHead('normal');renderBodyRows();renderParts();say('Plain minifig. Load textures, parts or a character prefab.');loadStdMaps();};
 renderBodyRows();renderParts();requestAnimationFrame(frame);
 loadExample().catch(e=>say('The example could not load: '+e.message,true));
 </script>

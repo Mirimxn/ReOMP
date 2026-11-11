@@ -88,7 +88,7 @@ function parseGameTexture(buf){
   if(rt<0)throw new Error('no RTXT block: not a game texture');
   const W=d.getUint32(rt+8,false),H=d.getUint32(rt+12,false),mips=d.getUint32(rt+20,false),code=d.getUint32(rt+28,false);
   const tot=(f)=>{let s=0;for(let m=0;m<mips;m++)s+=mipSize(f,Math.max(1,W>>m),Math.max(1,H>>m));return s;};
-  let fmt=code==1?'BC1':code==3||code==0x1a?'BC3':'BC7';
+  let fmt=code==1?'BC1':code==6||code==3||code==0x1a?'BC3':'BC7';   // game codes: 1 BC1, 6 BC3 (DXT5), 0x1f BC7
   // trust the data size over the code when they disagree
   const room=u8.length-rt;
   if(tot(fmt)>room||(fmt!='BC1'&&tot('BC1')<=room&&tot(fmt)>room))fmt='BC1';

@@ -163,10 +163,16 @@ function readCharacter(d){
     const tr=x.path?O.find(y=>y.path==x.path&&y.class=='apiTransformComponent'):null;
     if(tr){const p=tr.o+17+19;r.transform={local:[8,9,10].map(k=>v.getFloat32(p+4*k,true)),world:[20,21,22].map(k=>v.getFloat32(p+4*k,true)),pos:p};}
     renders.push(r);}
+  // the neck lift some characters carry (an attachment's AttachmentOffsetComponent on the Neck joint raises the head)
+  let neck=null;
+  for(const x of O){if(x.class!='AttachmentOffsetComponent'||/^(Items|Abilities)/.test(x.path)||x.path.includes('/'))continue;
+    const T=D.traceOf(x);if(D.bad)continue;const j=T.find(t=>t[0]=='Joint'),of=T.find(t=>t[0]=='Offset');if(!j||!of)continue;
+    const L=v.getUint32(j[2],true);if(latin(d,j[2]+4,j[2]+4+Math.max(0,L-1))!=='Neck')continue;
+    neck={entity:x.path,pos:of[2],y:v.getFloat32(of[2]+4,true)};break;}
   // roster link: "Characters" + 16-byte id + the row name
   let roster=null;for(const o of findAll(d,'Characters\0',hdrEnd)){if(v.getUint32(o-4,true)!==11)continue;const L=v.getUint32(o+27,true);
     if(L>1&&L<80){roster={pos:o,lenPos:o+27,name:latin(d,o+31,o+31+L-1)};break;}}
-  return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,
+  return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,
     body:renders.find(r=>r.entity==''&&/super_minifig/i.test(r.model.path))||renders.find(r=>r.entity==''),
     attachments:renders.filter(r=>r.entity!=='')};}
 
@@ -232,6 +238,7 @@ function apply(d0,plan,ctx){
       for(const [field,tex] of Object.entries(pc.tex||{})){const s=ov.slots[field];if(!s)continue;
         if(!tex&&!s.path)continue;putHandle(s.pos,tex&&tex.path,tex&&tex.id);}}
     if(pc.place&&r.transform){const p=r.transform.pos;pc.place.forEach((c,i)=>{const dl=c-r.transform.local[i];v.setFloat32(p+4*(8+i),c,true);v.setFloat32(p+4*(20+i),r.transform.world[i]+dl,true);});}}
+  if(plan.neckLift!=null&&C.neck)v.setFloat32(C.neck.pos+4,plan.neckLift,true);
   // own name and roster link (names keep the base's length, so the header name tree is untouched)
   const B=C.baseName.toLowerCase(),N=plan.internalName.toLowerCase();if(N.length!=B.length)throw new Error('internal name must have '+B.length+' letters');
   const lower=d.map(c=>c>=65&&c<=90?c+32:c);
