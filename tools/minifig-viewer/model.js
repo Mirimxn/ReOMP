@@ -28,6 +28,34 @@ function partMaterials(u8,dv,nparts,nmats){const o=findTag(u8,'PSID');if(o<0||!n
     const vals=[];for(let k=a;k+1<e-8;k+=2)vals.push(dv.getUint16(k,false));
     let m=vals.length?vals[vals.length-1]:-1;if(m<0||m>=nmats)m=prev;if(part<nparts){res[part]=m;prev=m;}s=i+4;i+=3;}
   return res;}
+// named meshes after the PSID draw list: name and bounds in the space of the bone the mesh hangs on
+function meshTable(u8,dv){const o=findTag(u8,'PSID');if(o<0)return [];const end=Math.min(u8.length,o+400000);const out=[];
+  for(let i=o;i<end-80;i++){const L=u8[i];if(L<5||L>48||u8[i-1]!==0)continue;let s='',ok=true;
+    for(let k=0;k<L-1;k++){const c=u8[i+1+k];if(!((c>=48&&c<=57)||(c>=65&&c<=90)||(c>=97&&c<=122)||c==95)){ok=false;break;}s+=String.fromCharCode(c);}
+    if(!ok||u8[i+L]!==0||!/^[A-Za-z]/.test(s)||!/(Mesh|BreakUp)$/.test(s))continue;
+    let k=i+40;for(;k<i+140;k++)if(u8[k]==0x3f&&u8[k+1]==0x80&&u8[k+2]==0&&u8[k+3]==0)break;if(k>=i+140)continue;
+    const f=(p)=>dv.getFloat32(p,false);const mn=[f(k-12),f(k-8),f(k-4)],mx=[f(k+4),f(k+8),f(k+12)];
+    if(![...mn,...mx].every(v=>Math.abs(v)<10))continue;out.push({name:s,mn,mx});i=k+16;}
+  return out;}
+// models built from named rigid meshes on their own skeleton (astromechs): keep the pieces of the drawn meshes,
+// leave out break-up copies and loose bricks, and tag the alternative tops (Top_A, Top_B…) so a character can pick one
+function namedPieces(all,table,bones){if(!table.length||!bones)return null;
+  const offs=bones.filter(b=>b.parent>=0).map(b=>[b.world[12],b.world[13],b.world[14]]).filter(o=>o.some(v=>Math.abs(v)>1e-4));const out=[];
+  // a table entry also stands for its mirror image (left and right parts)
+  const ents=[];for(const t of table){ents.push(t);ents.push({name:t.name,mn:[-t.mx[0],t.mn[1],t.mn[2]],mx:[-t.mn[0],t.mx[1],t.mx[2]]});}
+  for(const pc of all){const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];for(let j=0;j<pc.pos.length;j+=3)for(let c=0;c<3;c++){const v=pc.pos[j+c];if(v<mn[c])mn[c]=v;if(v>mx[c])mx[c]=v;}
+    // skinned pieces are listed in model space; rigid ones relative to the bone they hang on
+    const os=pc.skin?[[0,0,0]]:offs;let best=null,be=0.004;
+    for(const t of ents)for(const o of os){let e=0;for(let c=0;c<3;c++)e=Math.max(e,Math.abs(t.mn[c]+o[c]-mn[c]),Math.abs(t.mx[c]+o[c]-mx[c]));
+      if(/BreakUp/i.test(t.name))e+=0.003;   // a drawn mesh wins a tie with its break-up copy
+      if(e<be){be=e;best=t;}}
+    if(!best||/BreakUp|^Brick/i.test(best.name))continue;const v=/^Top_([A-Z])_/i.exec(best.name);
+    const variant=v?v[1].toUpperCase():null;
+    // one copy of each mesh (detail levels) and of each top
+    const o=out.find(q=>variant?q.variant==variant:(q.mesh==best.name&&[0,1,2].every(c=>Math.abs(q.bmn[c]-mn[c])<0.003&&Math.abs(q.bmx[c]-mx[c])<0.003)));
+    if(o){const better=(pc.mat>=0)-(o.mat>=0)||pc.pos.length-o.pos.length;if(better<=0)continue;out.splice(out.indexOf(o),1);}
+    out.push(Object.assign(pc,{mesh:best.name,variant,bmn:mn,bmx:mx}));}
+  return out.length?out:null;}
 function parseModel(buf){
   const u8=new Uint8Array(buf),dv=new DataView(buf);const be=(p)=>dv.getUint32(p,false);
   const find=(s,from)=>{const c=[...s].map(ch=>ch.charCodeAt(0));outer:for(let i=from||0;i<u8.length-c.length;i++){for(let k=0;k<c.length;k++)if(u8[i+k]!=c[k])continue outer;return i;}return -1;};
@@ -76,8 +104,11 @@ function parseModel(buf){
       const idx=new Uint16Array(P.icnt);for(let k=0;k<P.icnt;k++)idx[k]=dv.getUint16(I.data+2*(P.ioff+k),true);
       return {pos,uv0,uv1,idx,mn:g.mn,mx:g.mx,mat:P.mat};});};
   const hasUV1=use.some(P=>{const L=listWith(P,VAR_UV01);const d=L&&L.defs.find(x=>x[0]==VAR_UV01);return d&&d[1]==6;});
-  const pieces=build(use),rigid=build(rigidUse);
-  const skinned=use.some(P=>has(P,VAR_BLEND));
-  return {pieces,rigid,skinned,hasUV1,bones:parseSkeleton(u8,dv),materials:mats};
+  let pieces=build(use),rigid=build(rigidUse);
+  const skinned=use.some(P=>has(P,VAR_BLEND));const bones=parseSkeleton(u8,dv);let variants=null;
+  // a skeleton without a minifig's hips: the body is made of named rigid meshes (droids)
+  if(bones&&!bones.some(b=>/^hips$/i.test(b.name))&&bones.some(b=>/^body$/i.test(b.name))){const np=namedPieces([...pieces.map(p=>Object.assign(p,{skin:true})),...rigid],meshTable(u8,dv),bones);
+    if(np){pieces=np;rigid=[];variants=[...new Set(np.map(p=>p.variant).filter(Boolean))].sort();}}
+  return {pieces,rigid,skinned,hasUV1,bones,materials:mats,variants};
 }
 if(typeof module!='undefined')module.exports={parseModel,mul4};
