@@ -99,7 +99,7 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
     const mm=M.model(figRot,0,(onHead?dy:0)+liftAt(SLOT_LEVEL[m.slot]||0),0),mvp=M.mul(vp,mm);
     if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvp,mm,eye,null,[c[0],c[1],c[2],1]);}
     else drawMesh(m.g,mvp,mm,eye,slots[slotFor(m.slot)].surface);}
-  for(const p of parts){if(!p.visible)continue;const mp=partMatrix(p,dy),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
+  for(const p of parts){if(!p.visible)continue;const mp=partMatrix(p,dy),mvp=M.mul(vp,mp);p.meshes.forEach((g,i)=>{const m=p.pieceMat&&p.pieceMat[i];if(m==='hide')return;drawMesh(g,mvp,mp,eye,m?m.surface:p.surface);});}}
 function partMatrix(p,dy){const m=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0)+liftAt(levelOfPart(p)),p.place.z);return p.fit?M.mul(m,p.fit.mat):m;}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
 const ptrs=new Map();let lastPinch=0,downAt=null;
@@ -191,6 +191,10 @@ function customBody(model){const B={};for(const b of model.bones||[])B[b.name]=b
     else if(c[1]>hips)slot=c[2]<0?'body_front':'body_back';   // the face looks along -z
     else slot=c[0]<0?'leg_l':'leg_r';
     out.push({g:geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx),slot,follows:null});}
+  // the hips (and waist) are rigid pieces in these bodies
+  const mats=model.materials||[];
+  for(const pc of model.rigid||[]){const cy=(pc.mn[1]+pc.mx[1])/2;if(/HIPS/i.test(mats[pc.mat]||'')&&cy>hips-0.04&&cy<neck-0.08&&!out.some(o=>o.slot=='hips'&&o.cy==cy)){
+    out.push({g:geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx),slot:'hips',follows:null,cy});}}
   return out;}
 function slotFor(s){return $('swapLR').checked?({arm_l:'arm_r',arm_r:'arm_l',leg_l:'leg_r',leg_r:'leg_l',hand_l:'hand_r',hand_r:'hand_l'}[s]||s):s;}
 
@@ -252,8 +256,28 @@ const HEAD_BONES=/^(head|neck|neckdriven|hat|hair|glasses)$/i;
 // parts that replace pieces of the body: a custom head (face models with their own head) or whole arms
 function hiddenSlots(){const h=new Set();for(const p of parts){if(!p.visible||!p.model||!p.model.bones)continue;const names=p.model.bones.map(b=>b.name);
     if(names.some(n=>/^(head|neck)_match$/i.test(n))&&!/super_face|facetex/i.test(p.origModel||p.name))h.add('head');
-    for(const [bone,slots] of [['LeftArm',['arm_r']],['RightArm',['arm_l']]])if(names.includes(bone))slots.forEach(x=>h.add(x));}
+    for(const [bone,slots] of [['LeftArm',['arm_r']],['RightArm',['arm_l']]])if(p.fit&&p.fit.own==bone)slots.forEach(x=>h.add(x));}
   return h;}
+// ---------- several materials in one model: the draw list says which material each piece uses; the prefab's overrides are
+// matched to the materials by name (head_fode_diff -> Fode_MAT); shadow impostors and occluders are not drawn
+const HIDE_MAT=/shadow|occ?ulder|occluder/i;
+const nameToks=(s)=>s.replace(/([a-z])([A-Z])/g,'$1_$2').toLowerCase().split(/[^a-z0-9]+/).map(t=>t.replace(/\d+$/,'')).filter(t=>t.length>=3&&!/^(mat|dx11|variant|auto)$/.test(t));
+function matchMaterials(names,ovs){const res=new Array(names.length).fill(null);const used=new Set();const pairs=[];
+  names.forEach((n,i)=>{if(HIDE_MAT.test(n))return;const tk=nameToks(n);for(const o of ovs){const txt=Object.values(o.refs).map(r=>r.path.split('/').pop()).join(' ');const sc=tk.filter(t=>txt.includes(t)).length;if(sc)pairs.push([sc,i,o]);}});
+  pairs.sort((a,b)=>b[0]-a[0]||a[1]-b[1]||a[2].id-b[2].id);
+  for(const [sc,i,o] of pairs){if(res[i]||used.has(o))continue;res[i]=o;used.add(o);}
+  const free=ovs.filter(o=>!used.has(o));let k=0;names.forEach((n,i)=>{if(!res[i]&&!HIDE_MAT.test(n)&&k<free.length)res[i]=free[k++];});
+  return res;}
+function setupMats(p){p.mats=null;p.pieceMat=null;const m=p.model;if(!m||!m.materials||m.materials.length<2)return;
+  const hasUV1=m.hasUV1;let ovs;
+  if(p.ovs&&p.ovs.length>1)ovs=p.ovs;else if(!p.ovs)ovs=m.materials.filter(n=>!HIDE_MAT.test(n)).map((n,i)=>({id:null,label:n,refs:{},tint:null}));else return;
+  const mats=ovs.map(o=>{const surface=makeSurface(o.tint||p.surface.color,hasUV1);surface.refs=o.refs;surface.origColor=surface.color;uvDefaults(surface,m);
+    return {id:o.id,label:o.label||'',surface,ov:o};});
+  const byOv=new Map(mats.map(x=>[x.ov,x]));
+  const match=p.ovs?matchMaterials(m.materials,ovs):m.materials.map(n=>ovs.find(o=>o.label==n)||null);
+  match.forEach((o,i)=>{if(o){const x=byOv.get(o);if(!x.label)x.label=m.materials[i];else if(!x.label.includes(m.materials[i]))x.label+=', '+m.materials[i];}});
+  p.mats=mats;p.pieceMat=m.pieces.map(pc=>pc.mat<0?null:HIDE_MAT.test(m.materials[pc.mat]||'')?'hide':(match[pc.mat]?byOv.get(match[pc.mat]):null));}
+function allOwners(){const o=[...Object.values(slots),...parts];for(const p of parts)if(p.mats)o.push(...p.mats);return o;}
 // ---------- parts
 const parts=[];let partSeq=0;
 function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)return {y:0};
@@ -265,7 +289,7 @@ function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)retur
 function addPart(name,model,opts={}){
   const p={id:++partSeq,name,model,surface:makeSurface(opts.color||'#f2f2f0',model?model.hasUV1:true),meshes:[],visible:true,
     place:Object.assign({x:0,y:0,z:0},opts.place||defaultPlacement(name,model))};
-  if(model){p.meshes=meshesOf(model);uvDefaults(p.surface,model);p.fit=boneFit(model);if(p.fit)p.place={x:0,y:0,z:0};}parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
+  if(model){p.meshes=meshesOf(model);uvDefaults(p.surface,model);setupMats(p);p.fit=boneFit(model);if(p.fit)p.place={x:0,y:0,z:0};}parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
 // parts whose colour sits in the material's base layer (diffuse_0), which the game maps with the second UV pair
 const baseLayer=(n)=>/PAULDRON|TORSOATTACHMENT|ADDITIONALMODEL|FACETEX/i.test(n);
 function meshesOf(model){return model.pieces.map(pc=>geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx));}
@@ -286,7 +310,14 @@ function renderParts(){if(CH)CH.hidden=hiddenSlots();const box=$('partList');box
     else head.append(vis,nm,col,btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
     el.append(head);
     if(CH)el.append(partSlotLine(p));
-    if(expanded.has(key)){if(p.entity&&p.newModel)el.append(specialEditor(p));el.append(mapEditor(p,key,renderParts));
+    if(expanded.has(key)){if(p.entity&&p.newModel)el.append(specialEditor(p));
+      if(p.mats){const h=document.createElement('p');h.className='hint sub2';h.textContent=p.mats.length+' materials: each has its own colour and textures.';el.append(h);
+        for(const m of p.mats){const mk=key+'_m'+(m.id??m.label);const row=document.createElement('div');row.className='part-head';row.style.paddingLeft='14px';
+          const c=document.createElement('input');c.type='color';c.value=m.surface.color;c.setAttribute('aria-label','Colour of '+m.label);c.oninput=()=>{m.surface.color=c.value;paintColor(m.surface);};
+          const b=document.createElement('button');b.className='part-name';b.textContent=(m.id!=null?'Material '+m.id+' · ':'')+m.label;b.setAttribute('aria-expanded',expanded.has(mk));
+          b.onclick=()=>{expanded.has(mk)?expanded.delete(mk):expanded.add(mk);setTarget({ref:m,el:null});renderParts();};
+          row.append(c,b);el.append(row);if(expanded.has(mk))el.append(mapEditor(m,mk,renderParts));}}
+      else el.append(mapEditor(p,key,renderParts));
       const grid=document.createElement('div');grid.className='part-grid';
       for(const [ax,lab,min,max] of [['y','Height',-0.1,0.5],['x','Side',-0.2,0.2],['z','Depth',-0.2,0.2]]){
         const l=document.createElement('span');l.textContent=lab;const r=document.createElement('input');r.type='range';r.min=min;r.max=max;r.step=0.0005;r.value=p.place[ax];r.id='pl_'+ax+'_'+p.id;r.setAttribute('aria-label',p.name+' '+lab);
@@ -327,7 +358,7 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
     // a texture the loaded character already uses: show it wherever it is used
     const game=CH&&CH.refIndex.get(keyOf(n));
     if(game&&!forced){const img=await loadImage(f);let hit=0;
-      for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==game.path){setMap(o.surface,k,img,n,{game});hit++;}
+      for(const o of allOwners())if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==game.path){setMap(o.surface,k,img,n,{game});hit++;}
       if(hit){placed++;continue;}}
     const owner=forced?forced.ref:((target&&target.ref)||ownerOf(n));   // the part you selected wins over a guess from the name
     if(!owner){skipped.push(n+' (the name does not say which part it is for: click a part or body row name, then load it again)');continue;}
@@ -383,6 +414,8 @@ function loadCharacter(name,bytes){
     Object.assign(p,{entity:r.key,entityName:r.entity||'(character root)',ownBody:!r.entity,slotKind:slotKind(r),origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
       visible:r.enabled,origEnabled:r.enabled,rigid:!skinned,origPlace:{...p.place},origColor:p.surface.color});
     p.surface.refs=refsOf(C,r);index(p.surface.refs);
+    p.ovs=r.overrides.filter(o=>o.id>=1).map(o=>({id:o.id,refs:refsOf(C,r,[o.id]),tint:(o.tintEn!=null&&C.d[o.tintEn]===1)?hexOf(o.colour):null}));
+    for(const o of p.ovs)index(o.refs);
 }
   setHead(C.neck&&Math.abs(C.neck.y-HEAD_UP)<0.002?'up':'normal');CH.origHead=headMode;
   $('bodySec').hidden=!C.body;$('ownBodyNote').hidden=!!C.body;
@@ -399,7 +432,7 @@ function fits(p,model,name){if(!p.slotKind)return null;const sk=/\.ghg$/i.test(n
   if(p.ownBody)return 'the character\'s own body model cannot be swapped here';
   if(sk!==p.slotKind.skinned)return name+' is '+(sk?'a skinned model (.ghg)':'a rigid model (.gsc)')+' but '+p.entityName+' holds '+(p.slotKind.skinned?'skinned':'rigid')+' models: the game would not show it there';
   return null;}
-function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);uvDefaults(p.surface,model);p.fit=p.ownBody?null:boneFit(model);if(p.fit){p.place={x:0,y:0,z:0};p.origPlace={x:0,y:0,z:0};}
+function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);uvDefaults(p.surface,model);setupMats(p);p.fit=p.ownBody?null:boneFit(model);if(p.fit){p.place={x:0,y:0,z:0};p.origPlace={x:0,y:0,z:0};}
   if(p.entity&&bytes){const path=PF.selfPath(bytes).toLowerCase();
     if(keyOf(path)==keyOf(p.origModel)){p.newModel=null;p.name=name;return;}
     const names=PF.specialNames(bytes);
@@ -436,7 +469,7 @@ function renderCharacter(){const sec=$('charSec'),ex=$('exportSec');sec.hidden=e
   $('charScene').textContent=CH.scene?CH.scene.name:'not loaded: drop '+C.baseName.toLowerCase()+'_cheapminifig.scene_baked so the roster shows the new look';
   const need=[];
   for(const p of parts)if(p.entity&&!p.model&&!p.newModel)need.push(baseFile(p.origModel));
-  for(const o of [...Object.values(slots),...parts])if(o.surface.refs&&o.surface.refs.color&&!o.surface.maps.color.img&&!o.surface.maps.color.cleared)need.push(baseFile(o.surface.refs.color.path));
+  for(const o of allOwners())if(o.surface.refs&&o.surface.refs.color&&!o.surface.maps.color.img&&!o.surface.maps.color.cleared)need.push(baseFile(o.surface.refs.color.path));
   const u=[...new Set(need)];$('charNeed').textContent=u.length?'To see it as in the game, drop: '+u.join(', '):'All its models and prints are loaded.';
   renderSlots();issueKey='';renderIssues();
   if(!$('expId').value)$('internalName').textContent='';else $('internalName').textContent=internalName($('expId').value,C.baseName);}
@@ -473,7 +506,7 @@ function renderSlots(){if(!CH)return;const l=parts.filter(p=>p.entity&&!p.ownBod
   $('charSlots').textContent=l.length?l.join('; '):'none: this character has no attachment slots';}
 $('charFiles').onclick=async()=>{if(!CH)return;const files=[[CH.C.selfPath,CH.bytes]];if(CH.scene)files.push([CH.scene.C.selfPath,CH.scene.bytes]);
   const paths=new Set();for(const p of parts)if(p.origModel)paths.add(p.origModel);
-  for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const r of Object.values(o.surface.refs))paths.add(r.path);
+  for(const o of allOwners())if(o.surface.refs)for(const r of Object.values(o.surface.refs))paths.add(r.path);
   let missing=0;for(const ref of paths){const e=GAME.entries.size?findGame(ref):null;if(!e){missing++;continue;}try{files.push([e.path,await readGame(e)]);}catch(err){missing++;}}
   await saveFile(CH.C.baseName+'-files.zip',PF.zip(files));say('Saved '+files.length+' files'+(missing?' ('+missing+' not found in the game folder)':'')+'.');};
 // ---------- export
@@ -528,9 +561,15 @@ async function exportMod(){if(!CH)return;const C=CH.C;
         const stem=p.newModel.name.replace(/\.[^.]+$/,'').toLowerCase();
         let found=0;for(const ext of ['pc_shaders','nxg_textures']){const x=extraFiles.get(stem+'.'+ext);if(x){found++;const rel=sp.replace(/\.[^./]+$/,'.'+ext.toUpperCase());files.push([rel,x.data]);resources.push(rel);}}
         if(found<2)alone.push(p.newModel.name);}}
+    else if(p.mats&&p.mats[0].id!=null){pc.mats=[];   // one entry per material override
+      for(const m of p.mats){const ms=m.surface,e={id:m.id};
+        for(const k of ['color','normal','brdf']){const ref=ms.refs&&ms.refs[k];const field=k=='color'?(ref?ref.field:'diffuse_1'):k=='normal'?'normal_0':'specular_0';
+          const t=await texFor(ms.maps[k],folder,[folder,P,tag,'m'+m.id,KIND_TAG[k]].filter(Boolean).join('_'),ref);if(t!==undefined)(e.tex=e.tex||{})[field]=t;}
+        if(ms.color.toLowerCase()!=(ms.origColor||'').toLowerCase())e.tint=linOf(ms.color);
+        if(e.tex||e.tint)pc.mats.push(e);}}
     else{for(const k of ['color','normal','brdf']){const ref=s.refs&&s.refs[k];const field=k=='color'?(ref?ref.field:'diffuse_1'):k=='normal'?'normal_0':'specular_0';
         const t=await texFor(s.maps[k],folder,[folder,P,tag,KIND_TAG[k]].filter(Boolean).join('_'),ref);if(t!==undefined)(pc.tex=pc.tex||{})[field]=t;}}
-    if(s.color.toLowerCase()!=(p.origColor||'').toLowerCase()||p.newModel)pc.tint=linOf(s.color);
+    if(!pc.mats&&(s.color.toLowerCase()!=(p.origColor||'').toLowerCase()||p.newModel))pc.tint=linOf(s.color);
     if(p.rigid&&p.origPlace&&['x','y','z'].some(a=>Math.abs(p.place[a]-p.origPlace[a])>1e-5))pc.place=[p.place.x,p.place.y,p.place.z];
     plan.parts.push(pc);}
   say('Writing the prefab…');await tick();
@@ -634,15 +673,19 @@ async function loadFromGame(list){try{say('Opening '+list.map(e=>e.path.split('/
   catch(e){say('Could not read it: '+e.message,true);console.error(e);}}
 
 // a character from anywhere gets its models, prints, normal and BRDF maps and preview scene from the game
-async function autoLoadCharacter(){if(!CH||!GAME.entries.size)return;const me=CH;const want=new Map();
-  for(const p of parts)if(p.entity&&!p.model&&!p.newModel){const e=findGame(p.origModel);if(e)want.set(e.path,e);}
-  for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs)){if(o.surface.maps[k].img)continue;const e=findGame(r.path);if(e)want.set(e.path,e);}
-  if(CH.bodyModelPath&&!CH.bodyModel){const e=findGame(CH.bodyModelPath);if(e)want.set(e.path,e);}
-  if(!CH.scene){const sp=CH.C.selfPath.replace(/\.prefab_baked$/i,'_cheapminifig.scene_baked');const e=findGame(sp);if(e)want.set(e.path,e);}
-  if(!want.size)return;say('Loading '+want.size+' game files for '+CH.C.baseName+'…');
-  const files=[];for(const e of want.values()){if(CH!==me)return;try{files.push(await gameFile(e));}catch(err){console.warn(e.path,err);}}
-  if(CH!==me)return;   // another character was opened meanwhile
-  await handleFiles(files,null);if(CH!==me)return;say(CH.C.baseName+' loaded from the game files.');}
+async function autoLoadCharacter(){if(!CH||!GAME.entries.size)return;const me=CH;const tried=new Set();let total=0;
+  // models can bring more materials with their own textures, so look again after each batch
+  for(let pass=0;pass<4;pass++){const want=new Map();const add=(e)=>{if(e&&!tried.has(e.path)){want.set(e.path,e);}};
+    for(const p of parts)if(p.entity&&!p.model&&!p.newModel)add(findGame(p.origModel));
+    for(const o of allOwners())if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs)){if(o.surface.maps[k].img)continue;add(findGame(r.path));}
+    if(CH.bodyModelPath&&!CH.bodyModel)add(findGame(CH.bodyModelPath));
+    if(!CH.scene)add(findGame(CH.C.selfPath.replace(/\.prefab_baked$/i,'_cheapminifig.scene_baked')));
+    if(!want.size)break;for(const k of want.keys())tried.add(k);total+=want.size;
+    say('Loading '+total+' game files for '+CH.C.baseName+'…');
+    const files=[];for(const e of want.values()){if(CH!==me)return;try{files.push(await gameFile(e));}catch(err){console.warn(e.path,err);}}
+    if(CH!==me)return;   // another character was opened meanwhile
+    await handleFiles(files,null);if(CH!==me)return;}
+  if(total)say(CH.C.baseName+' loaded from the game files.');}
 // the standard minifig's own normal and BRDF maps for the plain body and the example
 const STD_MAPS={head:['head_front','head_front'],body_front:['body_front','body_front'],body_back:['body_front','body_front'],arm_l:['left_arm','left_arm'],arm_r:['right_arm','right_arm'],
   hand_l:['left_hand','right_hand'],hand_r:['left_hand','right_hand'],hips:['hips','hips'],leg_l:['left_leg','left_leg'],leg_r:['right_leg','right_leg']};

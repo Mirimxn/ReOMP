@@ -243,7 +243,9 @@ function apply(d0,plan,ctx){
     if(pc.special!=null&&r.special){const b=enc(pc.special+'\0');edits.push([r.special.pos,r.special.len,cat([u32le(b.length),b])]);}
     // material 0 is the model's unused default when the model has more: write the real materials
     const real=r.overrides.filter(o=>o.id>=1);
-    for(const ov of (real.length?real:r.overrides)){if(pc.tint)setTint(ov,pc.tint);
+    for(const e of pc.mats||[]){const ov=r.overrides.find(o=>o.id===e.id);if(!ov)continue;if(e.tint)setTint(ov,e.tint);
+      for(const [field,tex] of Object.entries(e.tex||{})){const sl=ov.slots[field];if(!sl||(!tex&&!sl.path))continue;putHandle(sl.pos,tex&&tex.path,tex&&tex.id);}}
+    if(!pc.mats)for(const ov of (real.length?real:r.overrides)){if(pc.tint)setTint(ov,pc.tint);
       for(const [field,tex] of Object.entries(pc.tex||{})){const s=ov.slots[field];if(!s)continue;
         if(!tex&&!s.path)continue;putHandle(s.pos,tex&&tex.path,tex&&tex.id);}}
     if(pc.place&&r.transform){const p=r.transform.pos;pc.place.forEach((c,i)=>{const dl=c-r.transform.local[i];v.setFloat32(p+4*(8+i),c,true);v.setFloat32(p+4*(20+i),r.transform.world[i]+dl,true);});}}
