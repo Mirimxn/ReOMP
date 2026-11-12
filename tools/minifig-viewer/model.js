@@ -20,32 +20,33 @@ function parseModel(buf){
     if(m&0xc0000000){ix=m&0xffff;q+=4;}else{const ic=be(q+4);q+=12;idxs[ref]={count:ic,data:q};ix=ref;ref++;q+=2*ic;}
     const info=q;const ioff=be(q),icnt=be(q+4),voff=be(q+8),vcnt=be(q+14);
     q=info+22;const num=dv.getInt32(q,false);q+=4;if(num>0)q+=num;const num2=dv.getInt32(q,false);q+=4;if(num2>0)throw new Error('unsupported mesh (relative positions)');
-    q+=44;ref+=2;parts.push({list:pl[0],idx:ix,ioff,icnt,voff,vcnt});
+    q+=44;ref+=2;parts.push({lists:pl,idx:ix,ioff,icnt,voff,vcnt});
   }
-  const has=(L,v)=>L.defs.some(d=>d[0]==v);
-  const textured=Object.keys(lists).map(Number).filter(k=>has(lists[k],VAR_UV01));
-  let use=textured.length?textured:Object.keys(lists).map(Number);
-  if(use.some(k=>has(lists[k],VAR_BLEND)))use=use.filter(k=>has(lists[k],VAR_BLEND));   // skinned model: skip posed copies
-  const readPos=(L,j)=>{const d=L.defs.find(x=>x[0]==VAR_POS);const o=L.data+j*L.stride+d[2];
+  // a part's vertex data can be split over several streams (positions in one list, UVs and skin weights in another)
+  const listWith=(P,v)=>{for(const k of P.lists){const L=lists[k];if(L&&L.defs.some(d=>d[0]==v))return L;}return null;};
+  const has=(P,v)=>!!listWith(P,v);
+  let use=parts.filter(P=>has(P,VAR_POS));const textured=use.filter(P=>has(P,VAR_UV01));if(textured.length)use=textured;
+  if(use.some(P=>has(P,VAR_BLEND)))use=use.filter(P=>has(P,VAR_BLEND));   // skinned model: skip posed copies
+  const readPos=(P,j)=>{const L=listWith(P,VAR_POS);const d=L.defs.find(x=>x[0]==VAR_POS);const o=L.data+j*L.stride+d[2];
     if(d[1]==6||d[1]==5)return [halfToFloat(dv.getUint16(o,true)),halfToFloat(dv.getUint16(o+2,true)),d[1]==6?halfToFloat(dv.getUint16(o+4,true)):0];
     return [dv.getFloat32(o,true),dv.getFloat32(o+4,true),dv.getFloat32(o+8,true)];};
-  const readUV=(L,j,set)=>{const d=L.defs.find(x=>x[0]==VAR_UV01);if(!d)return [0,0];const o=L.data+j*L.stride+d[2];
+  const readUV=(P,j,set)=>{const L=listWith(P,VAR_UV01);if(!L)return [0,0];const d=L.defs.find(x=>x[0]==VAR_UV01);const o=L.data+j*L.stride+d[2];
     const k=(set==1&&d[1]==6)?4:0;return [halfToFloat(dv.getUint16(o+k,true)),halfToFloat(dv.getUint16(o+k+2,true))];};
   // one copy of each piece: detail levels repeat a piece with the same bounds, keep the most detailed
   const groups=[];
-  for(const P of parts){if(!use.includes(P.list)||!idxs[P.idx]||P.icnt<3)continue;const L=lists[P.list];
-    const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];for(let j=P.voff;j<P.voff+P.vcnt;j+=Math.max(1,P.vcnt>>6)){const p=readPos(L,j);for(let c=0;c<3;c++){mn[c]=Math.min(mn[c],p[c]);mx[c]=Math.max(mx[c],p[c]);}}
+  for(const P of use){if(!idxs[P.idx]||P.icnt<3)continue;const key=P.lists.join(',');
+    const mn=[1e9,1e9,1e9],mx=[-1e9,-1e9,-1e9];for(let j=P.voff;j<P.voff+P.vcnt;j+=Math.max(1,P.vcnt>>6)){const p=readPos(P,j);for(let c=0;c<3;c++){mn[c]=Math.min(mn[c],p[c]);mx[c]=Math.max(mx[c],p[c]);}}
     const same=(g)=>[0,1,2].every(c=>{const ca=(g.mn[c]+g.mx[c])/2,cb=(mn[c]+mx[c])/2,ea=g.mx[c]-g.mn[c],eb=mx[c]-mn[c];
       return Math.abs(ca-cb)<0.012&&Math.abs(ea-eb)<=0.2*Math.max(ea,eb)+0.004;});
-    const g=groups.find(g=>g.list==P.list&&same(g));
-    if(!g)groups.push({list:P.list,mn,mx,part:P});else if(P.icnt>g.part.icnt)g.part=P;}
-  const hasUV1=use.some(k=>{const d=lists[k].defs.find(x=>x[0]==VAR_UV01);return d&&d[1]==6;});
-  const pieces=groups.map(g=>{const P=g.part,L=lists[P.list],I=idxs[P.idx];
+    const g=groups.find(g=>g.key==key&&same(g));
+    if(!g)groups.push({key,mn,mx,part:P});else if(P.icnt>g.part.icnt)g.part=P;}
+  const hasUV1=use.some(P=>{const L=listWith(P,VAR_UV01);const d=L&&L.defs.find(x=>x[0]==VAR_UV01);return d&&d[1]==6;});
+  const pieces=groups.map(g=>{const P=g.part,I=idxs[P.idx];
     const pos=new Float32Array(P.vcnt*3),uv0=new Float32Array(P.vcnt*2),uv1=new Float32Array(P.vcnt*2);
-    for(let j=0;j<P.vcnt;j++){const p=readPos(L,P.voff+j);pos.set(p,j*3);uv0.set(readUV(L,P.voff+j,0),j*2);uv1.set(readUV(L,P.voff+j,1),j*2);}
+    for(let j=0;j<P.vcnt;j++){const p=readPos(P,P.voff+j);pos.set(p,j*3);uv0.set(readUV(P,P.voff+j,0),j*2);uv1.set(readUV(P,P.voff+j,1),j*2);}
     const idx=new Uint16Array(P.icnt);for(let k=0;k<P.icnt;k++)idx[k]=dv.getUint16(I.data+2*(P.ioff+k),true);
     return {pos,uv0,uv1,idx,mn:g.mn,mx:g.mx};});
-  const skinned=use.some(k=>has(lists[k],VAR_BLEND));
+  const skinned=use.some(P=>has(P,VAR_BLEND));
   return {pieces,skinned,hasUV1};
 }
 if(typeof module!='undefined')module.exports={parseModel};

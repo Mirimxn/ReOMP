@@ -84,6 +84,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
 .seg button{font:inherit;font-size:12px;border:0;background:var(--chip);color:var(--fg);padding:4px 9px;cursor:pointer}
 .seg button+button{border-left:1px solid var(--line)}
 .seg button[aria-pressed=true]{background:var(--accent);color:var(--accent-fg)}
+.issues{margin:0;padding-left:18px;font-size:12px;color:var(--fg)}.issues li{margin:2px 0}
 .headrow{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:12.5px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -111,7 +112,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <div id="gameOn" hidden>
         <p class="hint" id="gameInfo"></p>
         <div class="game-search"><input type="text" class="txt" id="gameSearch" placeholder="Search: clonetrooper prefab, hat_, kama…" aria-label="Search the game files" autocomplete="off" spellcheck="false">
-          <select id="gameKind" class="txt" aria-label="File type" style="width:auto"><option value="">All</option><option value="\.prefab_baked$">Characters</option><option value="\.(gsc|ghg)$">Models</option><option value="\.texture$">Textures</option></select></div>
+          <select id="gameKind" class="txt" aria-label="File type" style="width:auto"><option value="^(additionalcontent/[^/]+/)?chars/">Character files</option><option value="">Everything</option><option value="\.prefab_baked$">Characters</option><option value="\.(gsc|ghg)$">Models</option><option value="\.texture$">Textures</option></select></div>
         <p class="hint" id="gameCount" style="margin-top:4px"></p>
         <div class="results" id="gameResults"></div>
         <div style="margin-top:6px"><button class="btn icon" id="gameForget">Disconnect</button></div>
@@ -124,11 +125,14 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
         <dt>Abilities</dt><dd>from the base: its moves, voice, weapon and class abilities come with the prefab</dd>
         <dt>Roster row</dt><dd id="charRow"></dd>
         <dt>Preview</dt><dd id="charScene"></dd>
+        <dt>Slots</dt><dd id="charSlots"></dd>
       </dl>
       <p class="hint" id="charNeed" style="margin-top:8px"></p>
-      <p class="hint" style="margin-top:6px">Change colours and textures below. A part's <b>Model…</b> button swaps its model; unticking a part leaves it out. The character can only use the part slots its base has.</p>
+      <p class="hint" style="margin-top:6px">Change colours and textures below. A part's <b>Model…</b> button swaps its model; unticking a part leaves it out. The character can only use the part slots its base has: a rigid model (.gsc) fits a rigid slot, a skinned one (.ghg) a skinned slot.</p>
+      <div style="margin-top:6px"><button class="btn icon" id="charFiles" title="Saves the character and every game file it uses as a ZIP">Save its files</button></div>
     </section>
-    <section>
+    <p class="hint" id="ownBodyNote" hidden>This character has its own body model instead of the standard minifig; it is listed under Parts.</p>
+    <section id="bodySec">
       <h2>Body</h2>
       <div class="rows" id="bodyRows"></div>
       <div class="headrow"><span id="headLbl">Head</span><div class="seg" role="group" aria-labelledby="headLbl" id="headSeg"><button data-h="up" aria-pressed="false">Up</button><button data-h="normal" aria-pressed="true">Normal</button><button data-h="hidden" aria-pressed="false">Hidden</button></div></div>
@@ -150,6 +154,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
         <label for="expMod">Mod folder</label><input type="text" id="expMod" placeholder="e.g. airborne-trooper" autocomplete="off" spellcheck="false">
         <label>Icon</label><div style="display:flex;gap:8px;align-items:center;min-width:0"><button class="btn icon" id="expIconBtn">Choose…</button><span class="tex" id="expIconName">none</span></div>
         <label for="expPreview">Preview slot</label><input type="text" id="expPreview" value="TC14" autocomplete="off" spellcheck="false" title="Hidden roster entry whose preview slot the new character borrows (used only with a preview scene)">
+        <div class="full" id="issueBox" hidden><p class="hint" style="margin:0 0 4px;color:var(--warn,#b45309)"><b>Won't carry into the game:</b></p><ul class="issues" id="issues"></ul></div>
         <p class="hint full">Internal file name <span class="tex" id="internalName"></span> keeps the base's length. The ZIP holds one mod folder for the Mod Manager, with the prefab, your new textures and models, and mod.json (needs v1).</p>
         <div class="full"><button class="btn primary" id="exportBtn">Export mod ZIP</button></div>
       </div>

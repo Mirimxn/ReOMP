@@ -2,7 +2,7 @@
 const SLOT_INFO=[
   ['head','Head','#e3b48a',/HEAD|FACE/],['body_front','Torso front','#f2f2f0',/BODY.*FRONT|TORSO.*FRONT|FRONT/],['body_back','Torso back','#f2f2f0',/BODY.*BACK|TORSO.*BACK|BACK/],
   ['arm_l','Left arm','#f2f2f0',/ARM.*LEFT|LEFT.*ARM/],['arm_r','Right arm','#f2f2f0',/ARM.*RIGHT|RIGHT.*ARM/],
-  ['hands','Hands','#1b1b1b',/HAND/],['hips','Hips','#f2f2f0',/HIP/],['leg_l','Left leg','#f2f2f0',/LEG.*LEFT|LEFT.*LEG/],
+  ['hand_r','Right hand','#1b1b1b',/HAND.*RIGHT|RIGHT.*HAND/],['hand_l','Left hand','#1b1b1b',/HAND/],['hips','Hips','#f2f2f0',/HIP/],['leg_l','Left leg','#f2f2f0',/LEG.*LEFT|LEFT.*LEG/],
   ['leg_r','Right leg','#f2f2f0',/LEG.*RIGHT|RIGHT.*LEG/]];
 const HIDDEN_SLOTS={waist:'hips',neck:'head'};   // small studs take the colour of their neighbour
 // texture kinds a material can hold, and how a file name says which one it is
@@ -93,29 +93,57 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
   if(!disc){const k=48,pos=[0,-0.001,0],uv=[0,0],idx=[];for(let i=0;i<=k;i++){const a=i/k*Math.PI*2;pos.push(Math.cos(a)*0.3,-0.001,Math.sin(a)*0.3);uv.push(0,0);if(i)idx.push(0,i,i+1);}
     disc=geom(new Float32Array(pos),new Float32Array(uv),null,new Uint16Array(idx));}
   const m0=M.model(0,0,0,0);gl.depthMask(false);drawMesh(disc,M.mul(vp,m0),m0,eye,null,[0,0,0,0.10]);gl.depthMask(true);
-  const mb=M.model(figRot,0,0,0),mvpb=M.mul(vp,mb);const dy=headMode=='up'?HEAD_UP:0;
+  const mb=M.model(figRot,0,0,0),mvpb=M.mul(vp,mb);const dy=headMode=='up'?HEAD_UP:0;lastView={vp,dy,w,h};
   const mh=M.model(figRot,0,dy,0),mvph=M.mul(vp,mh);
-  for(const m of bodyMeshes){const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;
+  for(const m of bodyMeshes){if(!showBody())continue;const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;
     if(onHead){if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvph,mh,eye,null,[c[0],c[1],c[2],1]);}else drawMesh(m.g,mvph,mh,eye,slots[slotFor(m.slot)].surface);continue;}
     if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvpb,mb,eye,null,[c[0],c[1],c[2],1]);}
     else drawMesh(m.g,mvpb,mb,eye,slots[slotFor(m.slot)].surface);}
   for(const p of parts){if(!p.visible)continue;const mp=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
-const ptrs=new Map();let lastPinch=0;
-canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);});
-const endPtr=(e)=>{ptrs.delete(e.pointerId);lastPinch=0;};canvas.addEventListener('pointerup',endPtr);canvas.addEventListener('pointercancel',endPtr);
+const ptrs=new Map();let lastPinch=0,downAt=null;
+canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);downAt=ptrs.size==1&&e.button==0?[e.clientX,e.clientY]:null;});
+const endPtr=(e)=>{if(e.type=='pointerup'&&downAt&&ptrs.size==1&&Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])<5){const hit=pickAt(e.clientX,e.clientY);if(hit)select(hit);}
+  ptrs.delete(e.pointerId);lastPinch=0;downAt=null;};canvas.addEventListener('pointerup',endPtr);canvas.addEventListener('pointercancel',endPtr);
 canvas.addEventListener('contextmenu',(e)=>e.preventDefault());
 canvas.addEventListener('pointermove',(e)=>{if(!ptrs.has(e.pointerId))return;const [x,y,pan]=ptrs.get(e.pointerId);const dx=e.clientX-x,dy=e.clientY-y;ptrs.set(e.pointerId,[e.clientX,e.clientY,pan]);
   if(ptrs.size==2){const [a,b]=[...ptrs.values()];const d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(lastPinch)cam.dist=Math.min(3,Math.max(0.15,cam.dist*lastPinch/d));lastPinch=d;return;}
   if(pan){cam.tgt[1]=Math.min(0.6,Math.max(-0.1,cam.tgt[1]+dy*0.001*cam.dist));return;}
   cam.az+=dx*0.008;cam.el=Math.min(1.45,Math.max(-1.2,cam.el+dy*0.006));});
 canvas.addEventListener('wheel',(e)=>{e.preventDefault();cam.dist=Math.min(3,Math.max(0.15,cam.dist*Math.exp(e.deltaY*0.001)));},{passive:false});
+// ---------- click a part or body piece in the view to select it
+let lastView=null,pickProg=null,pickLoc=null,pickU=null,pickFB=null,pickSize=[0,0],pickRB=null,pickTx=null;
+const showBody=()=>!CH||!!CH.C.body;
+function pickAt(cx,cy){if(!gl||!lastView)return null;const {vp,dy,w,h}=lastView;
+  if(!pickProg){const sh=(t,src)=>{const o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);return o;};pickProg=gl.createProgram();
+    gl.attachShader(pickProg,sh(gl.VERTEX_SHADER,'attribute vec3 p;uniform mat4 mvp;void main(){gl_Position=mvp*vec4(p,1.);}'));
+    gl.attachShader(pickProg,sh(gl.FRAGMENT_SHADER,'precision mediump float;uniform vec4 c;void main(){gl_FragColor=c;}'));gl.linkProgram(pickProg);
+    pickLoc=gl.getAttribLocation(pickProg,'p');pickU={mvp:gl.getUniformLocation(pickProg,'mvp'),c:gl.getUniformLocation(pickProg,'c')};}
+  if(!pickFB||pickSize[0]!=w||pickSize[1]!=h){pickFB=pickFB||gl.createFramebuffer();pickTx=pickTx||gl.createTexture();pickRB=pickRB||gl.createRenderbuffer();
+    gl.bindTexture(gl.TEXTURE_2D,pickTx);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+    gl.bindRenderbuffer(gl.RENDERBUFFER,pickRB);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,w,h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,pickFB);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,pickTx,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,pickRB);pickSize=[w,h];}
+  gl.bindFramebuffer(gl.FRAMEBUFFER,pickFB);gl.viewport(0,0,w,h);gl.disable(gl.BLEND);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(pickProg);for(let i=0;i<8;i++)gl.disableVertexAttribArray(i);gl.enableVertexAttribArray(pickLoc);
+  const hits=[null];const draw=(g,model,ref)=>{if(!g)return;hits.push(ref);const id=hits.length-1;
+    gl.uniformMatrix4fv(pickU.mvp,false,M.mul(vp,model));gl.uniform4f(pickU.c,(id&255)/255,(id>>8&255)/255,0,1);
+    gl.bindBuffer(gl.ARRAY_BUFFER,g.p);gl.vertexAttribPointer(pickLoc,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);gl.drawElements(gl.TRIANGLES,g.count,gl.UNSIGNED_SHORT,0);};
+  if(showBody())for(const m of bodyMeshes){const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;
+    draw(m.g,M.model(figRot,0,onHead?dy:0,0),slots[m.follows||slotFor(m.slot)]);}
+  for(const p of parts){if(!p.visible)continue;const mp=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z);for(const g of p.meshes)draw(g,mp,p);}
+  const r=canvas.getBoundingClientRect();const x=Math.round((cx-r.left)*w/r.width),y=Math.round(h-(cy-r.top)*h/r.height);const px=new Uint8Array(4);gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.useProgram(prog);gl.enable(gl.BLEND);gl.disableVertexAttribArray(pickLoc);
+  return px[3]?hits[px[0]+(px[1]<<8)]||null:null;}
+// select a body slot or a part: it becomes where textures go, and its row opens in the panel
+function select(ref){const isPart=parts.includes(ref);const key=isPart?'p'+ref.id:ref.id;expanded.add(key);setTarget({ref,el:null});
+  renderBodyRows();renderParts();if(target&&target.el){target.el.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  say((isPart?ref.name:ref.label)+' selected: textures you load now go to it.');}
 $('spin').onclick=()=>{spinning=!spinning;$('spin').setAttribute('aria-pressed',spinning);$('spin').classList.toggle('primary',spinning);};
 $('front').onclick=()=>view(1);$('back').onclick=()=>view(-1);
 
 // ---------- materials: base colour + print in the colour map, then optional normal, BRDF and emission maps
 const pot=(v)=>{let p=4;while(p<v&&p<1024)p*=2;return p;};
-function makeSurface(color,hasUV1){const maps={};for(const [k] of MAPS)maps[k]={img:null,name:'',uv:(k!='color'&&hasUV1)?1:0,flip:false,glTex:null,dirty:true,dx:true,src:null,game:null,cleared:false};
+function makeSurface(color,hasUV1){const maps={};for(const [k] of MAPS)maps[k]={img:null,name:'',uv:(k!='color'&&hasUV1)?1:0,uvDef:(k!='color'&&hasUV1)?1:0,flip:false,glTex:null,dirty:true,dx:true,src:null,game:null,cleared:false};
   const c=document.createElement('canvas');c.width=c.height=4;const s={color,maps,canvas:c,glTex:null,dirty:true};paintColor(s);return s;}
 function paintColor(s){const m=s.maps.color,w=m.img?pot(m.img.width):4,h=m.img?pot(m.img.height):4;s.canvas.width=w;s.canvas.height=h;
   const g=s.canvas.getContext('2d');g.fillStyle=s.color;g.fillRect(0,0,w,h);if(m.img)g.drawImage(m.img,0,0,w,h);s.dirty=true;}
@@ -144,8 +172,14 @@ for(const b of document.querySelectorAll('#headSeg button'))b.onclick=()=>setHea
 // ---------- body
 const b64=(s)=>{const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer;};
 const slots={};for(const [id,label,color] of SLOT_INFO)slots[id]={id,label,surface:makeSurface(color,true),defColor:color};
-const bodyMeshes=BODY.map(p=>({g:geom(new Float32Array(b64(p.pos)),new Float32Array(b64(p.uv0)),new Float32Array(b64(p.uv)),new Uint16Array(b64(p.idx))),slot:p.slot,follows:HIDDEN_SLOTS[p.slot]||null}));
-function slotFor(s){return $('swapLR').checked?({arm_l:'arm_r',arm_r:'arm_l',leg_l:'leg_r',leg_r:'leg_l'}[s]||s):s;}
+const bodyMeshes=[];
+for(const p of BODY){const pos=new Float32Array(b64(p.pos)),uv0=new Float32Array(b64(p.uv0)),uv=new Float32Array(b64(p.uv)),idx=new Uint16Array(b64(p.idx));
+  if(p.slot!='hands'){bodyMeshes.push({g:geom(pos,uv0,uv,idx),slot:p.slot,follows:HIDDEN_SLOTS[p.slot]||null});continue;}
+  // the hands are one piece in the model: split it by side so each hand has its own material (materials 7 and 8)
+  for(const [slot,left] of [['hand_l',true],['hand_r',false]]){const keep=[];
+    for(let i=0;i<idx.length;i+=3){const cx=pos[idx[i]*3]+pos[idx[i+1]*3]+pos[idx[i+2]*3];if((cx<0)==left)keep.push(idx[i],idx[i+1],idx[i+2]);}
+    bodyMeshes.push({g:geom(pos,uv0,uv,new Uint16Array(keep)),slot,follows:null});}}
+function slotFor(s){return $('swapLR').checked?({arm_l:'arm_r',arm_r:'arm_l',leg_l:'leg_r',leg_r:'leg_l',hand_l:'hand_r',hand_r:'hand_l'}[s]||s):s;}
 
 // ---------- side panel
 let target=null;   // where dropped textures go when the name does not say: {ref (a slot or part), el}
@@ -195,7 +229,7 @@ function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)retur
 function addPart(name,model,opts={}){
   const p={id:++partSeq,name,model,surface:makeSurface(opts.color||'#f2f2f0',model?model.hasUV1:true),meshes:[],visible:true,
     place:Object.assign({x:0,y:0,z:0},opts.place||defaultPlacement(name,model))};
-  if(model)p.meshes=meshesOf(model);if(baseLayer(name))p.surface.maps.color.uv=1;parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
+  if(model)p.meshes=meshesOf(model);if(baseLayer(name))p.surface.maps.color.uv=p.surface.maps.color.uvDef=1;parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
 // parts whose colour sits in the material's base layer (diffuse_0), which the game maps with the second UV pair
 const baseLayer=(n)=>/PAULDRON|TORSOATTACHMENT|ADDITIONALMODEL|FACETEX/i.test(n);
 function meshesOf(model){return model.pieces.map(pc=>geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx));}
@@ -207,8 +241,9 @@ function renderParts(){const box=$('partList');box.textContent='';$('noParts').h
     nm.onclick=()=>{if(expanded.has(key))expanded.delete(key);else expanded.add(key);setTarget({ref:p,el});renderParts();};
     const col=document.createElement('input');col.type='color';col.value=p.surface.color;col.id='pcol_'+p.id;col.setAttribute('aria-label',p.name+' colour');
     col.oninput=()=>{p.surface.color=col.value;paintColor(p.surface);};
-    if(p.entity){vis.setAttribute('aria-label','Include '+p.entity+' in the character');vis.title='Part of the character: untick to leave it out of the exported character';
-      head.append(vis,nm,col,btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entity));}
+    if(p.ownBody){vis.disabled=true;head.append(vis,nm,col);}
+    else if(p.entity){vis.setAttribute('aria-label','Include '+p.entityName+' in the character');vis.title='Part of the character: untick to leave it out of the exported character';
+      head.append(vis,nm,col,btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entityName));}
     else head.append(vis,nm,col,btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
     el.append(head);
     if(CH)el.append(partSlotLine(p));
@@ -227,7 +262,7 @@ $('addFiles').onclick=()=>{pending=null;$('fileInput').click();};
 $('fileInput').onchange=async(e)=>{const files=[...e.target.files];e.target.value='';await handleFiles(files,pending);pending=null;};
 function kindOf(name){for(const [k,,re] of MAPS)if(re&&re.test(name))return k;return 'color';}
 function ownerOf(name){const n=name.toUpperCase().replace(/\.[A-Z]+$/,'');
-  for(const p of parts){const toks=p.name.toUpperCase().replace(/\.[A-Z]+$/,'').split(/[_\-\s.]+/).filter(t=>t.length>=4&&!/^(DX11|ADDITIONALMODEL|SUPER|CHARACTER)$/.test(t));
+  for(const p of parts){const toks=p.name.toUpperCase().replace(/\.[A-Z]+$/,'').split(/[_\-\s.]+/).filter(t=>t.length>=4&&!/\d/.test(t)&&!/^(DX11|ADDITIONALMODEL|SUPER|CHARACTER|MINIFIG|FACE|HAIR|SKINNEDSKIRT|FABRIC|CAPE)$/.test(t));
     if(toks.some(t=>n.includes(t)))return p;}
   if(/HAT|HELMET/.test(n)){const h=parts.find(p=>/HAT|HELMET/i.test(p.name));if(h)return h;}
   for(const [id,,,re] of SLOT_INFO)if(re.test(n))return slots[id];
@@ -242,10 +277,10 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
     if(/\.(pc_shaders|nxg_textures)$/i.test(n)){extraFiles.set(n.toLowerCase(),{name:n,data:new Uint8Array(await f.arrayBuffer())});placed++;continue;}
     if(/\.(gsc|ghg)$/i.test(n)){const buf=await f.arrayBuffer();const model=parseModel(buf);if(!model.pieces.length)throw new Error('no visible mesh in this model');
       const bytes=new Uint8Array(buf);
-      if(forced&&forced.replace){setPartModel(forced.replace,n,model,bytes);renderParts();placed++;continue;}
+      if(forced&&forced.replace){const no=fits(forced.replace,model,n);if(no){skipped.push(no);continue;}setPartModel(forced.replace,n,model,bytes);renderParts();placed++;continue;}
       const own=CH&&parts.find(p=>p.entity&&keyOf(p.origModel)==keyOf(n));
       if(own){setPartModel(own,n,model,null);renderParts();placed++;continue;}
-      const p=addPart(n,model);p.bytes=bytes;renderParts();setTarget({ref:p,el:null});placed++;continue;}
+      const p=addPart(n,model);p.bytes=bytes;renderParts();select(p);placed++;continue;}
     if(!/\.(dds|texture|png|jpe?g|webp)$/i.test(n)){skipped.push(n+' (not a texture or model)');continue;}
     if(!forced&&WEATHER.test(n)){skipped.push(n+' (weather overlay: not shown here)');continue;}
     // a texture the loaded character already uses: show it wherever it is used
@@ -253,7 +288,7 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
     if(game&&!forced){const img=await loadImage(f);let hit=0;
       for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==game.path){setMap(o.surface,k,img,n,{game});hit++;}
       if(hit){placed++;continue;}}
-    const owner=forced?forced.ref:(ownerOf(n)||(target&&target.ref));
+    const owner=forced?forced.ref:((target&&target.ref)||ownerOf(n));   // the part you selected wins over a guess from the name
     if(!owner){skipped.push(n+' (the name does not say which part it is for: click a part or body row name, then load it again)');continue;}
     const kind=forced&&forced.kind?forced.kind:kindOf(n);
     setMap(owner.surface,kind,await loadImage(f),n,game?{game}:{src:f});placed++;
@@ -268,8 +303,8 @@ window.addEventListener('drop',(e)=>{e.preventDefault();dragDepth=0;$('drop').hi
 
 // ---------- character prefab: load a game character, dress it, export it as a mod
 // The prefab carries the character's abilities, voice and behaviour; its parts and materials are what can change.
-const TEX_FOLDER={head:'head',body_front:'body',body_back:'body',arm_l:'arm',arm_r:'arm',hands:'hand',hips:'hip',leg_l:'leg',leg_r:'leg'};
-const TEX_PART={head:'',body_front:'front',body_back:'back',arm_l:'left',arm_r:'right',hands:'',hips:'',leg_l:'left',leg_r:'right'};
+const TEX_FOLDER={head:'head',body_front:'body',body_back:'body',arm_l:'arm',arm_r:'arm',hand_l:'hand',hand_r:'hand',hips:'hip',leg_l:'leg',leg_r:'leg'};
+const TEX_PART={head:'',body_front:'front',body_back:'back',arm_l:'left',arm_r:'right',hand_l:'left',hand_r:'right',hips:'',leg_l:'left',leg_r:'right'};
 const KIND_TAG={color:'diff',normal:'nrm',brdf:'brdf'};
 const FACTIONS=[['','Same as the base character'],['0','Jedi'],['1','Sith'],['2','Hero'],['3','Bounty Hunter'],['4','Astromech Droid'],['5','Protocol Droid'],['6','Scoundrel'],['7','Villain'],['8','Scavenger'],['9','Civilian']];
 let CH=null;
@@ -292,29 +327,36 @@ function loadCharacter(name,bytes){
     if(!CH)throw new Error('load the character .prefab_baked first, then its preview scene');
     if(C.baseName.toLowerCase()!=CH.C.baseName.toLowerCase())throw new Error('this preview scene is for '+C.baseName+', not '+CH.C.baseName);
     CH.scene={name,bytes,C};renderCharacter();say('Preview scene added: the roster will show the new look.');return;}
-  if(!C.body)throw new Error('no minifig body in this prefab');
   resetAll();
   CH={name,bytes,C,scene:null,refIndex:new Map()};
   const index=(refs)=>{for(const r of Object.values(refs))CH.refIndex.set(keyOf(r.path),r);};
-  for(const [id] of SLOT_INFO){const s=slots[id].surface;const ids=PF.BODY_IDS[id];
+  if(C.body)for(const [id] of SLOT_INFO){const s=slots[id].surface;const ids=PF.BODY_IDS[id];
     s.refs=refsOf(C,C.body,PF.BODY_TEX_IDS[id]||ids);index(s.refs);
     s.color=tintOf(C,C.body,ids)||slots[id].defColor;s.origColor=s.color;paintColor(s);}
   for(const r of C.attachments){const skinned=/\.ghg$/i.test(r.model.path);
     // every attachment sits where its entity puts it (faces on the head, skirts at the hips)
-    const place=r.transform?{x:r.transform.local[0],y:r.transform.local[1],z:r.transform.local[2]}:null;
+    const place=r.transform?{x:r.transform.world[0],y:r.transform.world[1],z:r.transform.world[2]}:(r.entity?null:{x:0,y:0,z:0});
     const p=addPart(baseFile(r.model.path),null,{color:tintOf(C,r)||'#f2f2f0',place,collapsed:true});
     if(!place)Object.assign(p.place,defaultPlacement(r.model.path,{skinned}));
-    Object.assign(p,{entity:r.entity,origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
+    Object.assign(p,{entity:r.key,entityName:r.entity||'(character root)',ownBody:!r.entity,slotKind:slotKind(r),origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
       visible:r.enabled,origEnabled:r.enabled,rigid:!skinned,origPlace:{...p.place},origColor:p.surface.color});
     p.surface.refs=refsOf(C,r);index(p.surface.refs);
-    p.surface.maps.color.uv=(p.surface.refs.color&&p.surface.refs.color.field=='diffuse_0')?1:0;}
+    p.surface.maps.color.uv=p.surface.maps.color.uvDef=(p.surface.refs.color&&p.surface.refs.color.field=='diffuse_0')?1:0;}
   setHead(C.neck&&Math.abs(C.neck.y-HEAD_UP)<0.002?'up':'normal');CH.origHead=headMode;
+  $('bodySec').hidden=!C.body;$('ownBodyNote').hidden=!!C.body;
   // the game's own minifig maps are useful to see but are not what a mod changes
   renderBodyRows();renderParts();renderCharacter();
   $('expName').value='';$('expId').value='';$('expMod').value='';$('expDesc').value='';
   if(GAME.entries.size)setTimeout(autoLoadCharacter,0);
   say('Loaded '+C.baseName+(GAME.entries.size?'.':'. Drop its game textures and models to see it (or connect the game folder), then change what you like and export.'));}
 
+// what a character slot holds: rigid models (.gsc) attach to a locator, skinned ones (.ghg) follow the skeleton
+function slotKind(r){const m=r.model.path.toLowerCase();const folder=m.split('/').slice(-2,-1)[0]||'';
+  return {skinned:/\.ghg$/.test(m),label:(!r.entity?'body model':folder.replace(/^super_/,'').replace(/_/g,' '))+(/\.ghg$/.test(m)?' (skinned)':' (rigid)')};}
+function fits(p,model,name){if(!p.slotKind)return null;const sk=/\.ghg$/i.test(name);
+  if(p.ownBody)return 'the character\'s own body model cannot be swapped here';
+  if(sk!==p.slotKind.skinned)return name+' is '+(sk?'a skinned model (.ghg)':'a rigid model (.gsc)')+' but '+p.entityName+' holds '+(p.slotKind.skinned?'skinned':'rigid')+' models: the game would not show it there';
+  return null;}
 function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);
   if(p.entity&&bytes){const path=PF.selfPath(bytes).toLowerCase();
     if(keyOf(path)==keyOf(p.origModel)){p.newModel=null;p.name=name;return;}
@@ -327,12 +369,13 @@ function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model)
 
 // one line under a part: which character slot it fills
 function partSlotLine(p){const l=document.createElement('div');l.className='hint slotline';
-  if(p.entity){l.textContent='Slot '+p.entity+(p.newModel?' · new model (game had '+baseFile(p.origModel)+')':p.model?'':' · '+baseFile(p.origModel)+' not loaded');
+  if(p.entity){l.textContent=(p.ownBody?'Body model':'Slot '+p.entityName+' · '+p.slotKind.label)+(p.newModel?' · new model (game had '+baseFile(p.origModel)+')':p.model?'':' · '+baseFile(p.origModel)+' not loaded');
     if(p.newModel){const u=btn('Undo','icon',()=>{p.newModel=null;p.model=null;p.meshes=[];p.name=baseFile(p.origModel);p.special=p.origSpecial;p.rigid=!/\.ghg$/i.test(p.origModel);renderParts();},'Go back to the game model');u.style.marginLeft='6px';l.append(u);}
     return l;}
-  l.textContent='View only. Use it as: ';const sel=document.createElement('select');sel.setAttribute('aria-label','Character slot for '+p.name);
+  l.textContent='Shown here only: the game won\'t have it unless it fills a slot. Use it as: ';const sel=document.createElement('select');sel.setAttribute('aria-label','Character slot for '+p.name);
   const o0=document.createElement('option');o0.value='';o0.textContent='nothing (view only)';sel.append(o0);
-  for(const q of parts.filter(q=>q.entity)){const o=document.createElement('option');o.value=q.entity;o.textContent=q.entity;sel.append(o);}
+  for(const q of parts.filter(q=>q.entity&&!q.ownBody)){const o=document.createElement('option');o.value=q.entity;const no=fits(q,p.model,p.name);
+    o.textContent=q.entityName+' · '+q.slotKind.label+(no?' (won\'t fit)':'');o.disabled=!!no;sel.append(o);}
   sel.onchange=()=>{const q=parts.find(x=>x.entity==sel.value);if(!q)return;
     setPartModel(q,p.name,p.model,p.bytes);for(const [k] of MAPS){const a=p.surface.maps[k];if(a.img)setMap(q.surface,k,a.img,a.name,{src:a.src,game:a.game});}
     q.surface.color=p.surface.color;paintColor(q.surface);q.visible=true;
@@ -353,6 +396,7 @@ function renderCharacter(){const sec=$('charSec'),ex=$('exportSec');sec.hidden=e
   for(const p of parts)if(p.entity&&!p.model&&!p.newModel)need.push(baseFile(p.origModel));
   for(const o of [...Object.values(slots),...parts])if(o.surface.refs&&o.surface.refs.color&&!o.surface.maps.color.img&&!o.surface.maps.color.cleared)need.push(baseFile(o.surface.refs.color.path));
   const u=[...new Set(need)];$('charNeed').textContent=u.length?'To see it as in the game, drop: '+u.join(', '):'All its models and prints are loaded.';
+  renderSlots();issueKey='';renderIssues();
   if(!$('expId').value)$('internalName').textContent='';else $('internalName').textContent=internalName($('expId').value,C.baseName);}
 
 function internalName(id,base){const L=base.length;const s=id.replace(/[^A-Za-z0-9]/g,'');const h=PF.crc32(PF.enc(id.toUpperCase())).toString(36).toUpperCase().padStart(7,'0');
@@ -365,6 +409,31 @@ $('expId').oninput=()=>{$('expId').dataset.touched=1;renderCharacter();};$('expM
 let iconFile=null;$('expIconBtn').onclick=()=>$('iconInput').click();
 $('iconInput').onchange=(e)=>{iconFile=e.target.files[0]||null;e.target.value='';$('expIconName').textContent=iconFile?iconFile.name:'none';};
 
+// ---------- what the game won't get: listed beside the export button
+function gameIssues(){if(!CH)return [];const out=[];const C=CH.C;const all=[...(C.body?Object.values(slots).map(x=>[x.label,x.surface]):[]),...parts.map(p=>[p.name,p.surface])];
+  for(const p of parts)if(!p.entity&&p.visible)out.push(p.name+' is shown here only: it fills no slot of '+C.baseName+'.');
+  for(const p of parts)if(p.entity&&!p.rigid&&p.origPlace&&['x','y','z'].some(a=>Math.abs(p.place[a]-p.origPlace[a])>1e-5))out.push('Moving '+p.name+' shows here only: skinned parts follow the skeleton.');
+  for(const p of parts)if(p.newModel&&!p.newModel.orig){const st=p.newModel.name.replace(/\.[^.]+$/,'').toLowerCase();if(!(extraFiles.has(st+'.pc_shaders')&&extraFiles.has(st+'.nxg_textures')))out.push(p.newModel.name+' has no .pc_shaders/.nxg_textures loaded: fine for a game model, otherwise it shows untextured.');}
+  for(const [n,s] of all){if(s.maps.emission.img)out.push('The emission map on '+n+' is shown here only (no emission slot in the game).');
+    for(const [k,lab] of MAPS){const m=s.maps[k];if(m.img&&m.uv!==m.uvDef)out.push(lab+' on '+n+' uses '+(m.uv?'UV 2':'UV 1')+' here: the game uses the model\'s own UV.');
+      if(m.img&&m.flip&&!m.src)out.push('Flip on '+n+' '+lab.toLowerCase()+' changes this view only (it is a game texture).');}}
+  if(C.body){const ids=new Set(C.body.overrides.map(o=>o.id));for(const [id,label] of SLOT_INFO){const s=slots[id].surface;if((s.maps.color.src||s.color!=s.origColor)&&!(PF.BODY_IDS[id]||[]).some(i=>ids.has(i)))out.push(C.baseName+' has no material for '+label.toLowerCase()+', so its changes there won\'t show.');}}
+  if(headMode=='hidden')out.push('The hidden head is only hidden here.');
+  if(!C.neck&&headMode=='up')out.push(C.baseName+' has no neck lift, so the head stays at normal height.');
+  if($('swapLR').checked)out.push('Swapping left and right textures changes this view only.');
+  return out;}
+let issueKey='';
+function renderIssues(){const l=gameIssues();const k=l.join('\n');if(k===issueKey)return;issueKey=k;$('issueBox').hidden=!l.length;const ul=$('issues');ul.textContent='';
+  for(const t of l){const li=document.createElement('li');li.textContent=t;ul.append(li);}}
+setInterval(renderIssues,700);
+// slots of the base, and saving the character's own files
+function renderSlots(){if(!CH)return;const l=parts.filter(p=>p.entity&&!p.ownBody).map(p=>p.entityName+' · '+p.slotKind.label);
+  $('charSlots').textContent=l.length?l.join('; '):'none: this character has no attachment slots';}
+$('charFiles').onclick=async()=>{if(!CH)return;const files=[[CH.C.selfPath,CH.bytes]];if(CH.scene)files.push([CH.scene.C.selfPath,CH.scene.bytes]);
+  const paths=new Set();for(const p of parts)if(p.origModel)paths.add(p.origModel);
+  for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const r of Object.values(o.surface.refs))paths.add(r.path);
+  let missing=0;for(const ref of paths){const e=GAME.entries.size?findGame(ref):null;if(!e){missing++;continue;}try{files.push([e.path,await readGame(e)]);}catch(err){missing++;}}
+  await saveFile(CH.C.baseName+'-files.zip',PF.zip(files));say('Saved '+files.length+' files'+(missing?' ('+missing+' not found in the game folder)':'')+'.');};
 // ---------- export
 const potX=(v)=>{let p=4;while(p<v&&p<2048)p*=2;return p;};
 async function buildTexture(m,gamePath){const f=m.src,n=f.name.toLowerCase();const buf=new Uint8Array(await f.arrayBuffer());
@@ -510,7 +579,7 @@ let searchTimer=0;$('gameSearch').oninput=()=>{clearTimeout(searchTimer);searchT
 $('gameKind').onchange=searchGame;
 function searchGame(){const box=$('gameResults');box.textContent='';if(!GAME.entries.size)return;
   const terms=$('gameSearch').value.toLowerCase().split(/\s+/).filter(Boolean);const kind=$('gameKind').value;
-  if(!terms.length&&!kind){$('gameCount').textContent='Type part of a name: a character (cloneTrooper), a part (hat_), a texture…';return;}
+  if(!terms.length){$('gameCount').textContent='Type part of a name: a character (cloneTrooper), a part (hat_), a texture…';return;}
   const out=[];const seen=new Set();
   for(const [p,e] of GAME.entries){if(p!==e.path||seen.has(e))continue;if(kind&&!new RegExp(kind,'i').test(p))continue;
     if(terms.every(t=>p.includes(t))){seen.add(e);out.push(e);if(out.length>=150)break;}}
@@ -532,7 +601,7 @@ async function autoLoadCharacter(){if(!CH||!GAME.entries.size)return;const want=
   await handleFiles(files,null);say(CH.C.baseName+' loaded from the game files.');}
 // the standard minifig's own normal and BRDF maps for the plain body and the example
 const STD_MAPS={head:['head_front','head_front'],body_front:['body_front','body_front'],body_back:['body_front','body_front'],arm_l:['left_arm','left_arm'],arm_r:['right_arm','right_arm'],
-  hands:['left_hand','right_hand'],hips:['hips','hips'],leg_l:['left_leg','left_leg'],leg_r:['right_leg','right_leg']};
+  hand_l:['left_hand','right_hand'],hand_r:['left_hand','right_hand'],hips:['hips','hips'],leg_l:['left_leg','left_leg'],leg_r:['right_leg','right_leg']};
 async function loadStdMaps(){if(!GAME.entries.size||CH)return;const cache=new Map();let n=0;
   for(const [id,[nrm,brdf]] of Object.entries(STD_MAPS)){const s=slots[id].surface;
     for(const [kind,stem] of [['normal',nrm+'_dx11_nrm'],['brdf',brdf+'_dx11_brdf']]){if(s.maps[kind].img)continue;
@@ -553,7 +622,7 @@ async function loadExample(){
   setMap(sat.surface,'normal',await imgFromURL(SAMPLE_TEX.satchel_nrm),'ADDITIONALMODEL_SATCHEL_NRM (example)');
   setMap(sat.surface,'brdf',await imgFromURL(SAMPLE_TEX.satchel_brdf),'ADDITIONALMODEL_SATCHEL_BRDF (example)');
   expanded.clear();renderBodyRows();renderParts();}
-function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;extraFiles.clear();
+function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;extraFiles.clear();$('bodySec').hidden=false;$('ownBodyNote').hidden=true;
   for(const [id] of SLOT_INFO){const s=slots[id].surface;s.refs=null;for(const [k] of MAPS){Object.assign(s.maps[k],{img:null,name:'',dirty:true,src:null,game:null,cleared:false});}s.color=slots[id].defColor;paintColor(s);}
   renderCharacter();}
 $('clearAll').onclick=()=>{resetAll();setHead('normal');renderBodyRows();renderParts();say('Plain minifig. Load textures, parts or a character prefab.');loadStdMaps();};

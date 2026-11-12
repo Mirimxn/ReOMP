@@ -135,7 +135,7 @@ const EMPTY_HANDLE=new Uint8Array([2,0,0,0,0]);
 const SLOT_FIELDS=['diffuse_0','diffuse_1','normal_0','specular_0'];
 // body material ids of the standard minifig (super_minifig_dx11.ghg)
 const BODY_TEX_IDS={head:[1]};   // the head print sits on material 1 only
-const BODY_IDS={head:[1,2],body_front:[3],body_back:[4],arm_l:[5],arm_r:[6],hands:[7,8],leg_l:[9],leg_r:[10],hips:[11]};
+const BODY_IDS={head:[1,2],body_front:[3],body_back:[4],arm_l:[5],arm_r:[6],hand_l:[7],hand_r:[8],leg_l:[9],leg_r:[10],hips:[11]};
 function selfPath(d){const n=dv(d).getUint16(20,false);let e=22+n;while(e>22&&d[e-1]===0)e--;return latin(d,22,e);}
 function srgb(c){c=Math.max(0,Math.min(1,c));return Math.round(255*(c<=0.0031308?12.92*c:1.055*Math.pow(c,1/2.4)-0.055));}
 function lin(v){v/=255;return v<=0.04045?v/12.92:Math.pow((v+0.055)/1.055,2.4);}
@@ -145,9 +145,10 @@ function readCharacter(d){
   const sp=selfPath(d);const file=sp.split('/').pop();const isScene=/\.scene_baked$/i.test(file);
   const baseName=file.replace(/_cheapminifig\.scene_baked$/i,'').replace(/\.(prefab|scene)_baked$/i,'');
   const renders=[];
-  for(const x of O){if(x.class!='nttRenderTTExportObject')continue;if(/^(Items|Abilities)/.test(x.path)||x.path.includes('/'))continue;
+  // every drawn model of the character: the body, its attachments (nested ones too) and extra models on the root; not items, abilities, damage stages or locators
+  for(const x of O){if(x.class!='nttRenderTTExportObject')continue;if(/^(Items|Abilities|Locators)|Damage|IngameAnimation/i.test(x.path))continue;
     const T=D.traceOf(x);if(D.bad)continue;
-    const r={entity:x.path,obj:x,model:null,special:null,overrides:[]};let cur=null,inOv=false;
+    const r={entity:x.path,key:x.path||'#'+x.i,obj:x,model:null,special:null,overrides:[]};let cur=null,inOv=false;
     for(const [n,k,p] of T){
       if(n=='Model Resource'&&r.model==null)r.model={pos:p,path:handlePath(d,p)};
       else if(n=='Special Name'&&r.special==null){const L=v.getUint32(p,true);r.special={pos:p,len:4+L,value:latin(d,p+4,p+4+Math.max(0,L-1))};}
@@ -158,10 +159,11 @@ function readCharacter(d){
       else if(cur&&k=='handle'&&SLOT_FIELDS.includes(n))cur.slots[n]={pos:p,path:handlePath(d,p)};
       else if(n=='Normal Strength')cur=null;}
     if(!r.model||!r.model.path)continue;
-    const ent=x.path?O.find(y=>y.class=='apiEntity'&&y.entity==x.path&&y.path==''):null;
+    const ent=x.path?entityOf(O,x.path):null;
     r.enabled=ent?d[ent.o+17]===1:true;
     const tr=x.path?O.find(y=>y.path==x.path&&y.class=='apiTransformComponent'):null;
     if(tr){const p=tr.o+17+19;r.transform={local:[8,9,10].map(k=>v.getFloat32(p+4*k,true)),world:[20,21,22].map(k=>v.getFloat32(p+4*k,true)),pos:p};}
+    if(renders.some(q=>q.key==r.key))r.key+='#'+x.i;
     renders.push(r);}
   // the neck lift some characters carry (an attachment's AttachmentOffsetComponent on the Neck joint raises the head)
   let neck=null;
@@ -172,9 +174,11 @@ function readCharacter(d){
   // roster link: "Characters" + 16-byte id + the row name
   let roster=null;for(const o of findAll(d,'Characters\0',hdrEnd)){if(v.getUint32(o-4,true)!==11)continue;const L=v.getUint32(o+27,true);
     if(L>1&&L<80){roster={pos:o,lenPos:o+27,name:latin(d,o+31,o+31+L-1)};break;}}
+  const body=renders.find(r=>r.entity==''&&/super_minifig(_customiser)?_dx11/i.test(r.model.path))||null;   // the standard minifig body; other bodies are shown as parts
   return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,
-    body:renders.find(r=>r.entity==''&&/super_minifig/i.test(r.model.path))||renders.find(r=>r.entity==''),
-    attachments:renders.filter(r=>r.entity!=='')};}
+    body,attachments:renders.filter(r=>r!==body)};}
+// the apiEntity object of a full entity path ("Parent/Child")
+function entityOf(O,full){return O.find(y=>y.class=='apiEntity'&&(y.path?y.path+'/':'')+y.entity==full);}
 
 // ---------- texture files
 function bc7size(w,h,m){let s=0;for(let i=0;i<m;i++)s+=Math.max(1,Math.ceil(Math.max(1,w>>i)/4))*Math.max(1,Math.ceil(Math.max(1,h>>i)/4))*16;return s;}
@@ -223,12 +227,13 @@ function apply(d0,plan,ctx){
       for(const [field,tex] of Object.entries(ch.tex||{})){const s=ov.slots[field];if(!s)continue;putHandle(s.pos,tex&&tex.path,tex&&tex.id);}}}}
   // attachments
   const modelSwaps=[];
-  for(const pc of plan.parts||[]){const r=C.attachments.find(a=>a.entity==pc.entity);if(!r){log.push('no '+pc.entity+' in '+C.file);continue;}
-    const ent=C.O.find(y=>y.class=='apiEntity'&&y.entity==pc.entity&&y.path=='');
-    if(pc.enabled===false){for(const x of C.O){const inside=(x.class=='apiEntity'&&x.entity==pc.entity&&x.path=='')||x.path==pc.entity||x.path.startsWith(pc.entity+'/');
+  for(const pc of plan.parts||[]){const r=C.renders.find(a=>a.key==pc.entity);if(!r){log.push('no '+pc.entity+' in '+C.file);continue;}
+    const ent=r.entity?entityOf(C.O,r.entity):null;
+    if(pc.enabled===false&&!ent){if(d[r.obj.o+17]<=1)d[r.obj.o+17]=0;continue;}
+    if(pc.enabled===false){for(const x of C.O){const inside=x===ent||x.path==r.entity||x.path.startsWith(r.entity+'/');
         if(inside&&(x.class=='apiEntity'||C.D.isComp(x.ci))&&(d[x.o+17]===0||d[x.o+17]===1))d[x.o+17]=0;}continue;}
-    if(pc.model&&ent){const old=r.model.path;
-      for(const p of findAll(d0,enc(old+'\0'),ent.o,ent.end)){const st=p-4-16-1-4;if(d0[st]==2&&d0[st+1]==0&&d0[st+4]==1&&v.getUint32(p-4,true)==old.length+1)
+    if(pc.model){const old=r.model.path;const rg=ent||r.obj;
+      for(const p of findAll(d0,enc(old+'\0'),rg.o,rg.end)){const st=p-4-16-1-4;if(d0[st]==2&&d0[st+1]==0&&d0[st+4]==1&&v.getUint32(p-4,true)==old.length+1)
         edits.push([st,handleLen(d0,st),handleBytes(pc.model.path,d0.slice(st+5,st+21))]);}
       modelSwaps.push([old,pc.model.path]);}
     if(pc.special!=null&&r.special){const b=enc(pc.special+'\0');edits.push([r.special.pos,r.special.len,cat([u32le(b.length),b])]);}
