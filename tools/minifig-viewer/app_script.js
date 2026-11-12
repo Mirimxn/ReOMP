@@ -94,14 +94,13 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
     disc=geom(new Float32Array(pos),new Float32Array(uv),null,new Uint16Array(idx));}
   const m0=M.model(0,0,0,0);gl.depthMask(false);drawMesh(disc,M.mul(vp,m0),m0,eye,null,[0,0,0,0.10]);gl.depthMask(true);
   const mb=M.model(figRot,0,0,0),mvpb=M.mul(vp,mb);const dy=headMode=='up'?HEAD_UP:0;lastView={vp,dy,w,h};
-  const mh=M.model(figRot,0,dy,0),mvph=M.mul(vp,mh);
   const hid=CH?CH.hidden:null;
   for(const m of bodyMeshes){if(!showBody())continue;const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;if(hid&&hid.has(m.follows||m.slot))continue;
-    if(onHead){if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvph,mh,eye,null,[c[0],c[1],c[2],1]);}else drawMesh(m.g,mvph,mh,eye,slots[slotFor(m.slot)].surface);continue;}
-    if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvpb,mb,eye,null,[c[0],c[1],c[2],1]);}
-    else drawMesh(m.g,mvpb,mb,eye,slots[slotFor(m.slot)].surface);}
+    const mm=M.model(figRot,0,(onHead?dy:0)+liftAt(SLOT_LEVEL[m.slot]||0),0),mvp=M.mul(vp,mm);
+    if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvp,mm,eye,null,[c[0],c[1],c[2],1]);}
+    else drawMesh(m.g,mvp,mm,eye,slots[slotFor(m.slot)].surface);}
   for(const p of parts){if(!p.visible)continue;const mp=partMatrix(p,dy),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
-function partMatrix(p,dy){const m=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z);return p.fit?M.mul(m,p.fit.mat):m;}
+function partMatrix(p,dy){const m=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0)+liftAt(levelOfPart(p)),p.place.z);return p.fit?M.mul(m,p.fit.mat):m;}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
 const ptrs=new Map();let lastPinch=0,downAt=null;
 canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);downAt=ptrs.size==1&&e.button==0?[e.clientX,e.clientY]:null;});
@@ -131,7 +130,7 @@ function pickAt(cx,cy){if(!gl||!lastView)return null;const {vp,dy,w,h}=lastView;
     gl.uniformMatrix4fv(pickU.mvp,false,M.mul(vp,model));gl.uniform4f(pickU.c,(id&255)/255,(id>>8&255)/255,0,1);
     gl.bindBuffer(gl.ARRAY_BUFFER,g.p);gl.vertexAttribPointer(pickLoc,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);gl.drawElements(gl.TRIANGLES,g.count,gl.UNSIGNED_SHORT,0);};
   if(showBody())for(const m of bodyMeshes){const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;if(CH&&CH.hidden.has(m.follows||m.slot))continue;
-    draw(m.g,M.model(figRot,0,onHead?dy:0,0),slots[m.follows||slotFor(m.slot)]);}
+    draw(m.g,M.model(figRot,0,(onHead?dy:0)+liftAt(SLOT_LEVEL[m.slot]||0),0),slots[m.follows||slotFor(m.slot)]);}
   for(const p of parts){if(!p.visible)continue;const mp=partMatrix(p,dy);for(const g of p.meshes)draw(g,mp,p);}
   const r=canvas.getBoundingClientRect();const x=Math.round((cx-r.left)*w/r.width),y=Math.round(h-(cy-r.top)*h/r.height);const px=new Uint8Array(4);gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.useProgram(prog);gl.enable(gl.BLEND);gl.disableVertexAttribArray(pickLoc);
@@ -242,11 +241,18 @@ function boneFit(model){if(!model||!model.skinned||!model.bones)return null;cons
     const key=Object.keys(C).find(k=>k.toLowerCase()==base.toLowerCase());if(!key)continue;
     return {bone:key,own:b.name,mat:mul4(inv4(b.world),new Float32Array(C[key]))};}
   return null;}
+const JOINT_LEVEL={hips:0,hipsbase:0,spinebase:1,spine:2,spine1:3,spine2:4,neck:5,neckdriven:5,head:6,hat:6,hair:6,glasses:6};
+const SLOT_LEVEL={hips:0,leg_l:0,leg_r:0,body_front:4,body_back:4,arm_l:4,arm_r:4,hand_l:4,hand_r:4,neck:5,head:6};
+const levelOfBone=(n)=>{n=n.toLowerCase();if(n in JOINT_LEVEL)return JOINT_LEVEL[n];if(/arm|hand|shoulder|finger|clav/.test(n))return 4;if(/leg|foot|knee|toe/.test(n))return 0;return 4;};
+function levelOfPart(p){if(p.fit)return levelOfBone(p.fit.bone);if(followsHead(p))return 6;const y=p.place.y;return y>0.27?5:y>0.12?4:0;}
+// the joint lifts of visible attachments that reach this level
+function liftAt(level){if(!CH)return 0;let y=0;for(const o of CH.C.offsets){const owner=parts.find(q=>q.entityName==o.entity);if(owner&&!owner.visible)continue;
+  if(level>=levelOfBone(o.joint))y+=o.off[1];}return y;}
 const HEAD_BONES=/^(head|neck|neckdriven|hat|hair|glasses)$/i;
 // parts that replace pieces of the body: a custom head (face models with their own head) or whole arms
 function hiddenSlots(){const h=new Set();for(const p of parts){if(!p.visible||!p.model||!p.model.bones)continue;const names=p.model.bones.map(b=>b.name);
     if(names.some(n=>/^(head|neck)_match$/i.test(n))&&!/super_face|facetex/i.test(p.origModel||p.name))h.add('head');
-    for(const [bone,slots] of [['LeftArm',['arm_r','hand_r']],['RightArm',['arm_l','hand_l']]])if(names.includes(bone))slots.forEach(x=>h.add(x));}
+    for(const [bone,slots] of [['LeftArm',['arm_r']],['RightArm',['arm_l']]])if(names.includes(bone))slots.forEach(x=>h.add(x));}
   return h;}
 // ---------- parts
 const parts=[];let partSeq=0;

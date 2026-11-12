@@ -39,3 +39,5 @@ game textures (`.texture`, BC1/BC3/BC7 `.dds`, PNG) and models (`.gsc` rigid, `.
 - UV defaults: skinned models (bodies, faces, capes, kamas) print on UV 1 and take normal/BRDF from UV 2; rigid models (helmets, hair, pauldrons) the other way round.
 - Some prefabs store model paths with two trailing NULs; they are stripped when read.
 - Not done: models with several materials (faces with eyes/brows/mouth textures) show one texture; that needs the draw groups in `PSID`. The astromech body is skinned bone by bone and still shows its pieces apart.
+- Joint lifts: every `AttachmentOffsetComponent` (Joint + Offset) of an attachment moves that joint of the body while the attachment is shown: Fode and Beed's tail lifts `SpineBase` by 1.2 cm so it fits between hips and torso; CaribDiss's extra model lifts `Neck` by 1 cm. Body pieces and parts above the joint move with it.
+- Open: which material a mesh part uses. Each LTMU record (with its `:VARIANT_AUTO` copies) carries a DXTV layout; vertex lists are shared between materials, so the material of a part has to come from the `PSID` draw list (entries end with `87 83 b3 00`; the last u16 is the part index).

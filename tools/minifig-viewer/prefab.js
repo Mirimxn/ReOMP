@@ -168,16 +168,18 @@ function readCharacter(d){
     if(renders.some(q=>q.key==r.key))r.key+='#'+x.i;
     renders.push(r);}
   // the neck lift some characters carry (an attachment's AttachmentOffsetComponent on the Neck joint raises the head)
-  let neck=null;
-  for(const x of O){if(x.class!='AttachmentOffsetComponent'||/^(Items|Abilities)/.test(x.path)||x.path.includes('/'))continue;
+  // joint lifts: an attachment's AttachmentOffsetComponent moves a joint of the body (Neck raises the head, SpineBase everything above the hips)
+  const offsets=[];
+  for(const x of O){if(x.class!='AttachmentOffsetComponent'||/^(Items|Abilities)/.test(x.path))continue;
     const T=D.traceOf(x);if(D.bad)continue;const j=T.find(t=>t[0]=='Joint'),of=T.find(t=>t[0]=='Offset');if(!j||!of)continue;
-    const L=v.getUint32(j[2],true);if(latin(d,j[2]+4,j[2]+4+Math.max(0,L-1))!=='Neck')continue;
-    neck={entity:x.path,pos:of[2],y:v.getFloat32(of[2]+4,true)};break;}
+    const L=v.getUint32(j[2],true);const joint=latin(d,j[2]+4,j[2]+4+Math.max(0,L-1)).replace(/\0+$/,'');
+    offsets.push({entity:x.path,joint,pos:of[2],off:[0,1,2].map(i=>v.getFloat32(of[2]+4*i,true))});}
+  const n0=offsets.find(o=>o.joint=='Neck');const neck=n0?{entity:n0.entity,pos:n0.pos,y:n0.off[1]}:null;
   // roster link: "Characters" + 16-byte id + the row name
   let roster=null;for(const o of findAll(d,'Characters\0',hdrEnd)){if(v.getUint32(o-4,true)!==11)continue;const L=v.getUint32(o+27,true);
     if(L>1&&L<80){roster={pos:o,lenPos:o+27,name:latin(d,o+31,o+31+L-1)};break;}}
   const body=renders.find(r=>r.entity==''&&/super_(minifig|minifig_customiser|small)_dx11/i.test(r.model.path))||null;   // minifig-shaped bodies (standard, customiser, small); others (droids…) are shown as parts
-  return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,
+  return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,offsets,
     body,attachments:renders.filter(r=>r!==body)};}
 // the apiEntity object of a full entity path ("Parent/Child")
 function entityOf(O,full){return O.find(y=>y.class=='apiEntity'&&(y.path?y.path+'/':'')+y.entity==full);}
