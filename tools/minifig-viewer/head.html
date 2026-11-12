@@ -112,7 +112,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <div id="gameOn" hidden>
         <p class="hint" id="gameInfo"></p>
         <div class="game-search"><input type="text" class="txt" id="gameSearch" placeholder="Search: clonetrooper prefab, hat_, kama…" aria-label="Search the game files" autocomplete="off" spellcheck="false">
-          <select id="gameKind" class="txt" aria-label="File type" style="width:auto"><option value="^(additionalcontent/[^/]+/)?chars/">Character files</option><option value="">Everything</option><option value="\.prefab_baked$">Characters</option><option value="\.(gsc|ghg)$">Models</option><option value="\.texture$">Textures</option></select></div>
+          <select id="gameKind" class="txt" aria-label="File type" style="width:auto"><option value="^((additionalcontent|mods)/[^/]+/)?chars/">Character files</option><option value="">Everything</option><option value="\.prefab_baked$">Characters</option><option value="\.(gsc|ghg)$">Models</option><option value="\.texture$">Textures</option></select></div>
         <p class="hint" id="gameCount" style="margin-top:4px"></p>
         <div class="results" id="gameResults"></div>
         <div style="margin-top:6px"><button class="btn icon" id="gameForget">Disconnect</button></div>

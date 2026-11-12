@@ -613,6 +613,8 @@ const SKIP_DIRS=/^(omp|omp-.*|\.git|_?aamods|audio|cut|levels|ui)$/i;   // runti
 const normPath=(p)=>p.replace(/\\/g,'/').replace(/^\/+/,'').toLowerCase();
 function addEntry(path,e){path=normPath(path);e.path=path;if(!GAME.entries.has(path))GAME.count++;GAME.entries.set(path,e);
   const alias=path.replace(/^additionalcontent\/[^/]+\//,'');if(alias!==path&&!GAME.entries.has(alias))GAME.entries.set(alias,e);
+  // installed mods replace the game's files at the same path, as they do in the game
+  const modAlias=path.replace(/^mods\/[^/]+\//,'');if(modAlias!==path)GAME.entries.set(modAlias,e);
   const k=path.split('/').pop();const l=GAME.byName.get(k);if(l)l.push(e);else GAME.byName.set(k,[e]);}
 // a reference from a prefab (no _dx11, lower case) to the file that holds it
 function findGame(ref){ref=normPath(ref);const cands=[ref,ref.replace(/(\.[a-z_]+)$/,'_dx11$1'),ref.replace(/_dx11(\.[a-z_]+)$/,'$1')];
