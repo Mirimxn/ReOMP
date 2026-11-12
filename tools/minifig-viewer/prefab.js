@@ -129,7 +129,7 @@ function dropRecords(d,keepFn){const N=Deps(d);const keep=[];for(let k=0;k<N.nre
 
 // ---------- reading a character
 const handleLen=(d,p)=>d[p+4]?5+16+4+dv(d).getUint32(p+21,true):5;
-const handlePath=(d,p)=>{if(!d[p+4])return null;const L=dv(d).getUint32(p+21,true);return latin(d,p+25,p+25+L-1);};
+const handlePath=(d,p)=>{if(!d[p+4])return null;const L=dv(d).getUint32(p+21,true);return latin(d,p+25,p+25+L-1).replace(/\0+$/,'');};
 const handleBytes=(path,id)=>{const b=enc(path+'\0');return cat([new Uint8Array([2,0,0,0,1]),id,u32le(b.length),b]);};
 const EMPTY_HANDLE=new Uint8Array([2,0,0,0,0]);
 const SLOT_FIELDS=['diffuse_0','diffuse_1','normal_0','specular_0'];
@@ -155,6 +155,8 @@ function readCharacter(d){
       else if(n=='Material State Overrides')inOv=true;
       else if(n=='ID'&&inOv){inOv=false;cur={id:v.getUint16(p,true),slots:{}};r.overrides.push(cur);}
       else if(cur&&n=='colour_tint_enabled_0')cur.tintEn=p;
+      else if(cur&&n=='alpha_tint_enabled_0')cur.alphaEn=p;
+      else if(cur&&n=='alpha_tint_0')cur.alpha=p;
       else if(cur&&n=='colour_tint_0'){cur.tint=p;cur.colour=[0,1,2].map(i=>v.getFloat32(p+4*i,true));}
       else if(cur&&k=='handle'&&SLOT_FIELDS.includes(n))cur.slots[n]={pos:p,path:handlePath(d,p)};
       else if(n=='Normal Strength')cur=null;}
@@ -174,7 +176,7 @@ function readCharacter(d){
   // roster link: "Characters" + 16-byte id + the row name
   let roster=null;for(const o of findAll(d,'Characters\0',hdrEnd)){if(v.getUint32(o-4,true)!==11)continue;const L=v.getUint32(o+27,true);
     if(L>1&&L<80){roster={pos:o,lenPos:o+27,name:latin(d,o+31,o+31+L-1)};break;}}
-  const body=renders.find(r=>r.entity==''&&/super_minifig(_customiser)?_dx11/i.test(r.model.path))||null;   // the standard minifig body; other bodies are shown as parts
+  const body=renders.find(r=>r.entity==''&&/super_(minifig|minifig_customiser|small)_dx11/i.test(r.model.path))||null;   // minifig-shaped bodies (standard, customiser, small); others (droids…) are shown as parts
   return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,
     body,attachments:renders.filter(r=>r!==body)};}
 // the apiEntity object of a full entity path ("Parent/Child")
@@ -233,7 +235,7 @@ function apply(d0,plan,ctx){
     if(pc.enabled===false){for(const x of C.O){const inside=x===ent||x.path==r.entity||x.path.startsWith(r.entity+'/');
         if(inside&&(x.class=='apiEntity'||C.D.isComp(x.ci))&&(d[x.o+17]===0||d[x.o+17]===1))d[x.o+17]=0;}continue;}
     if(pc.model){const old=r.model.path;const rg=ent||r.obj;
-      for(const p of findAll(d0,enc(old+'\0'),rg.o,rg.end)){const st=p-4-16-1-4;if(d0[st]==2&&d0[st+1]==0&&d0[st+4]==1&&v.getUint32(p-4,true)==old.length+1)
+      for(const p of findAll(d0,enc(old+'\0'),rg.o,rg.end)){const st=p-4-16-1-4;if(d0[st]==2&&d0[st+1]==0&&d0[st+4]==1&&v.getUint32(p-4,true)>=old.length+1)
         edits.push([st,handleLen(d0,st),handleBytes(pc.model.path,d0.slice(st+5,st+21))]);}
       modelSwaps.push([old,pc.model.path]);}
     if(pc.special!=null&&r.special){const b=enc(pc.special+'\0');edits.push([r.special.pos,r.special.len,cat([u32le(b.length),b])]);}

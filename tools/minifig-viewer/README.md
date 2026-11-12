@@ -29,3 +29,13 @@ game textures (`.texture`, BC1/BC3/BC7 `.dds`, PNG) and models (`.gsc` rigid, `.
 - The view is mirrored in X: the game's coordinates are left-handed.
 - UV defaults: a colour map from the print layer (`diffuse_1`) uses the first UV pair; one from the base layer (`diffuse_0`: torso attachments, pauldrons, face textures) the second; normal and BRDF maps the second.
 - Head: Up is the 1 cm neck lift some characters carry (an `AttachmentOffsetComponent` on `Neck`); the export writes it when the base has that component.
+
+## Skeletons and character bodies
+
+- GHG skeleton (`LOGH`): u32 version 0x11, u32 0, u32 bone count; per bone u16 name length + name, a 64-byte matrix and 12 bytes (unused here), parent byte (0xff = root) and a flags byte; then u32 0, u32 count and the local bind matrices (big-endian, row-vector, translation in the last row). World = local x parent world. `skeleton.js` holds the standard minifig's (Head 0.2999, Neck 0.2891, Spine2 0.2428, Hips 0.1131: the same heights as the prefab locators).
+- Skinned attachments carry bones named after the character's (`Head_Match`, `Spine2_match`, `Neck_match`, or plain `LeftArm`, `Hat`); the viewer places a part at (its bone's bind pose)^-1 x (the character's bone). Faces, capes, Yoda's head, Fode and Beed's torso and arms land on the body this way.
+- A custom head (a `Head_match`/`Neck_match` model that is not `super_face`) hides the minifig head; a model with `LeftArm`/`RightArm` bones hides that arm and hand. This is inferred from the models; the prefabs carry no visibility flag for it.
+- `super_minifig_customiser` and `super_small` bodies are drawn from their own model, each piece assigned to a body slot by where it sits against the body's bones. Material IDs 1-11 are the same as the standard minifig.
+- UV defaults: skinned models (bodies, faces, capes, kamas) print on UV 1 and take normal/BRDF from UV 2; rigid models (helmets, hair, pauldrons) the other way round.
+- Some prefabs store model paths with two trailing NULs; they are stripped when read.
+- Not done: models with several materials (faces with eyes/brows/mouth textures) show one texture; that needs the draw groups in `PSID`. The astromech body is skinned bone by bone and still shows its pieces apart.

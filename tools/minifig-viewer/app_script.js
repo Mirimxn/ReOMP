@@ -95,11 +95,13 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
   const m0=M.model(0,0,0,0);gl.depthMask(false);drawMesh(disc,M.mul(vp,m0),m0,eye,null,[0,0,0,0.10]);gl.depthMask(true);
   const mb=M.model(figRot,0,0,0),mvpb=M.mul(vp,mb);const dy=headMode=='up'?HEAD_UP:0;lastView={vp,dy,w,h};
   const mh=M.model(figRot,0,dy,0),mvph=M.mul(vp,mh);
-  for(const m of bodyMeshes){if(!showBody())continue;const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;
+  const hid=CH?CH.hidden:null;
+  for(const m of bodyMeshes){if(!showBody())continue;const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;if(hid&&hid.has(m.follows||m.slot))continue;
     if(onHead){if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvph,mh,eye,null,[c[0],c[1],c[2],1]);}else drawMesh(m.g,mvph,mh,eye,slots[slotFor(m.slot)].surface);continue;}
     if(m.follows){const c=hexRGB(slots[m.follows].surface.color);drawMesh(m.g,mvpb,mb,eye,null,[c[0],c[1],c[2],1]);}
     else drawMesh(m.g,mvpb,mb,eye,slots[slotFor(m.slot)].surface);}
-  for(const p of parts){if(!p.visible)continue;const mp=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
+  for(const p of parts){if(!p.visible)continue;const mp=partMatrix(p,dy),mvp=M.mul(vp,mp);for(const g of p.meshes)drawMesh(g,mvp,mp,eye,p.surface);}}
+function partMatrix(p,dy){const m=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z);return p.fit?M.mul(m,p.fit.mat):m;}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
 const ptrs=new Map();let lastPinch=0,downAt=null;
 canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);downAt=ptrs.size==1&&e.button==0?[e.clientX,e.clientY]:null;});
@@ -128,9 +130,9 @@ function pickAt(cx,cy){if(!gl||!lastView)return null;const {vp,dy,w,h}=lastView;
   const hits=[null];const draw=(g,model,ref)=>{if(!g)return;hits.push(ref);const id=hits.length-1;
     gl.uniformMatrix4fv(pickU.mvp,false,M.mul(vp,model));gl.uniform4f(pickU.c,(id&255)/255,(id>>8&255)/255,0,1);
     gl.bindBuffer(gl.ARRAY_BUFFER,g.p);gl.vertexAttribPointer(pickLoc,3,gl.FLOAT,false,0,0);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);gl.drawElements(gl.TRIANGLES,g.count,gl.UNSIGNED_SHORT,0);};
-  if(showBody())for(const m of bodyMeshes){const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;
+  if(showBody())for(const m of bodyMeshes){const onHead=m.slot=='head'||m.slot=='neck';if(onHead&&headMode=='hidden')continue;if(CH&&CH.hidden.has(m.follows||m.slot))continue;
     draw(m.g,M.model(figRot,0,onHead?dy:0,0),slots[m.follows||slotFor(m.slot)]);}
-  for(const p of parts){if(!p.visible)continue;const mp=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0),p.place.z);for(const g of p.meshes)draw(g,mp,p);}
+  for(const p of parts){if(!p.visible)continue;const mp=partMatrix(p,dy);for(const g of p.meshes)draw(g,mp,p);}
   const r=canvas.getBoundingClientRect();const x=Math.round((cx-r.left)*w/r.width),y=Math.round(h-(cy-r.top)*h/r.height);const px=new Uint8Array(4);gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.useProgram(prog);gl.enable(gl.BLEND);gl.disableVertexAttribArray(pickLoc);
   return px[3]?hits[px[0]+(px[1]<<8)]||null:null;}
@@ -162,7 +164,7 @@ function imgFromURL(url){return new Promise((res,rej)=>{const i=new Image();i.on
 
 // ---------- head height: some characters lift the neck joint by 1 cm, raising the head and everything on it
 const HEAD_UP=0.01;let headMode='normal';
-const followsHead=(p)=>/^(hat|hair|facetex|head|helmet)/i.test(p.entity||p.name)||/\/(hat|hair|facetex)\//i.test(p.newModel?p.newModel.path:(p.origModel||''));
+const followsHead=(p)=>(p.fit?HEAD_BONES.test(p.fit.bone):false)||/^(hat|hair|facetex|head|helmet)/i.test(p.entityName||p.name)||/\/(hat|hair|facetex)\//i.test(p.newModel?p.newModel.path:(p.origModel||''));
 function setHead(m){headMode=m;for(const b of document.querySelectorAll('#headSeg button'))b.setAttribute('aria-pressed',b.dataset.h==m);
   let note='';if(CH){if(m=='hidden')note='Hidden only here: the exported character keeps its head.';else if(!CH.C.neck&&m=='up')note=CH.C.baseName+' has no neck lift to change, so it exports at normal height.';
     else if(CH.C.neck)note='Exported with the head '+(m=='up'?'raised by 1 cm':'at normal height')+' ('+CH.C.neck.entity+' sets the neck lift).';}
@@ -172,13 +174,25 @@ for(const b of document.querySelectorAll('#headSeg button'))b.onclick=()=>setHea
 // ---------- body
 const b64=(s)=>{const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer;};
 const slots={};for(const [id,label,color] of SLOT_INFO)slots[id]={id,label,surface:makeSurface(color,true),defColor:color};
-const bodyMeshes=[];
+let bodyMeshes=[];const STD_BODY=bodyMeshes;
 for(const p of BODY){const pos=new Float32Array(b64(p.pos)),uv0=new Float32Array(b64(p.uv0)),uv=new Float32Array(b64(p.uv)),idx=new Uint16Array(b64(p.idx));
   if(p.slot!='hands'){bodyMeshes.push({g:geom(pos,uv0,uv,idx),slot:p.slot,follows:HIDDEN_SLOTS[p.slot]||null});continue;}
   // the hands are one piece in the model: split it by side so each hand has its own material (materials 7 and 8)
   for(const [slot,left] of [['hand_l',true],['hand_r',false]]){const keep=[];
     for(let i=0;i<idx.length;i+=3){const cx=pos[idx[i]*3]+pos[idx[i+1]*3]+pos[idx[i+2]*3];if((cx<0)==left)keep.push(idx[i],idx[i+1],idx[i+2]);}
     bodyMeshes.push({g:geom(pos,uv0,uv,new Uint16Array(keep)),slot,follows:null});}}
+// a character's own minifig-shaped body (customiser, small): each piece goes to the body slot it sits in, judged against its skeleton
+function customBody(model){const B={};for(const b of model.bones||[])B[b.name]=b.world;const y=(n,d)=>B[n]?B[n][13]:d;
+  const neck=y('Neck',0.289),hips=y('Hips',0.113),lh=B.LeftHand,rh=B.RightHand;const out=[];
+  for(const pc of model.pieces){const c=[0,1,2].map(i=>(pc.mn[i]+pc.mx[i])/2);let slot;
+    const near=(h)=>h&&Math.hypot(c[0]-h[12],c[1]-h[13],c[2]-h[14])<0.035;
+    if(c[1]>neck-0.004)slot='head';else if(near(lh)||near(rh))slot=c[0]<0?'hand_l':'hand_r';
+    else if(Math.abs(c[0])>0.055&&c[1]>hips)slot=c[0]<0?'arm_l':'arm_r';
+    else if(Math.abs(c[0])<0.03&&c[1]<hips+0.015&&pc.mx[1]-pc.mn[1]<0.06)slot='hips';
+    else if(c[1]>hips)slot=c[2]<0?'body_front':'body_back';   // the face looks along -z
+    else slot=c[0]<0?'leg_l':'leg_r';
+    out.push({g:geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx),slot,follows:null});}
+  return out;}
 function slotFor(s){return $('swapLR').checked?({arm_l:'arm_r',arm_r:'arm_l',leg_l:'leg_r',leg_r:'leg_l',hand_l:'hand_r',hand_r:'hand_l'}[s]||s):s;}
 
 // ---------- side panel
@@ -218,6 +232,22 @@ function renderBodyRows(){const box=$('bodyRows');box.textContent='';
     name.onclick=()=>{if(expanded.has(id))expanded.delete(id);else expanded.add(id);setTarget({ref:s,el:row});renderBodyRows();};
     box.append(wrap);if(target&&target.ref===s){row.classList.add('target');target.el=row;}}}
 
+// ---------- skeleton: a skinned attachment carries bones named like the character's ("Head_match", "Spine2_match", "LeftArm");
+// the game puts each on the character's bone, so the part moves by (its bone's bind pose)^-1 x (the character's bone)
+function charBones(){if(CH&&CH.bodyModel&&CH.bodyModel.bones){const B={};for(const b of CH.bodyModel.bones)B[b.name]=b.world;return B;}return MINIFIG_BONES;}
+function inv4(m){const r=new Float32Array(16);for(let i=0;i<3;i++)for(let j=0;j<3;j++)r[i*4+j]=m[j*4+i];
+  for(let j=0;j<3;j++)r[12+j]=-(m[12]*r[j]+m[13]*r[4+j]+m[14]*r[8+j]);r[15]=1;return r;}
+function boneFit(model){if(!model||!model.skinned||!model.bones)return null;const C=charBones();
+  for(const b of model.bones){const base=b.name.replace(/_match$/i,'').replace(/^HipsBase$/i,'Hips');if(b.parent<0&&base==b.name)continue;
+    const key=Object.keys(C).find(k=>k.toLowerCase()==base.toLowerCase());if(!key)continue;
+    return {bone:key,own:b.name,mat:mul4(inv4(b.world),new Float32Array(C[key]))};}
+  return null;}
+const HEAD_BONES=/^(head|neck|neckdriven|hat|hair|glasses)$/i;
+// parts that replace pieces of the body: a custom head (face models with their own head) or whole arms
+function hiddenSlots(){const h=new Set();for(const p of parts){if(!p.visible||!p.model||!p.model.bones)continue;const names=p.model.bones.map(b=>b.name);
+    if(names.some(n=>/^(head|neck)_match$/i.test(n))&&!/super_face|facetex/i.test(p.origModel||p.name))h.add('head');
+    for(const [bone,slots] of [['LeftArm',['arm_r','hand_r']],['RightArm',['arm_l','hand_l']]])if(names.includes(bone))slots.forEach(x=>h.add(x));}
+  return h;}
 // ---------- parts
 const parts=[];let partSeq=0;
 function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)return {y:0};
@@ -229,14 +259,17 @@ function defaultPlacement(name,model){const n=name.toUpperCase();if(!model)retur
 function addPart(name,model,opts={}){
   const p={id:++partSeq,name,model,surface:makeSurface(opts.color||'#f2f2f0',model?model.hasUV1:true),meshes:[],visible:true,
     place:Object.assign({x:0,y:0,z:0},opts.place||defaultPlacement(name,model))};
-  if(model)p.meshes=meshesOf(model);if(baseLayer(name))p.surface.maps.color.uv=p.surface.maps.color.uvDef=1;parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
+  if(model){p.meshes=meshesOf(model);uvDefaults(p.surface,model);p.fit=boneFit(model);if(p.fit)p.place={x:0,y:0,z:0};}parts.push(p);if(!opts.collapsed)expanded.add('p'+p.id);return p;}
 // parts whose colour sits in the material's base layer (diffuse_0), which the game maps with the second UV pair
 const baseLayer=(n)=>/PAULDRON|TORSOATTACHMENT|ADDITIONALMODEL|FACETEX/i.test(n);
 function meshesOf(model){return model.pieces.map(pc=>geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx));}
-function renderParts(){const box=$('partList');box.textContent='';$('noParts').hidden=parts.length>0;
+// default UV sets: rigid models (.gsc, helmets) print on UV 2 and take their maps from UV 1; skinned ones the other way round
+function uvDefaults(surface,model){if(!model)return;const rigid=!model.skinned;for(const [k] of MAPS){const m=surface.maps[k];const d=model.hasUV1?(k=='color'?(rigid?1:0):(rigid?0:1)):0;
+  if(m.uv===m.uvDef)m.uv=d;m.uvDef=d;}}
+function renderParts(){if(CH)CH.hidden=hiddenSlots();const box=$('partList');box.textContent='';$('noParts').hidden=parts.length>0;
   for(const p of parts){const el=document.createElement('div');el.className='part';const key='p'+p.id;
     const head=document.createElement('div');head.className='part-head';
-    const vis=document.createElement('input');vis.type='checkbox';vis.checked=p.visible;vis.id='vis_'+p.id;vis.setAttribute('aria-label','Show '+p.name);vis.onchange=()=>{p.visible=vis.checked;};
+    const vis=document.createElement('input');vis.type='checkbox';vis.checked=p.visible;vis.id='vis_'+p.id;vis.setAttribute('aria-label','Show '+p.name);vis.onchange=()=>{p.visible=vis.checked;if(CH)CH.hidden=hiddenSlots();};
     const nm=document.createElement('button');nm.className='pname';nm.textContent=p.name;nm.title='Show or hide this part\'s textures; dropped textures with no clear name go here';nm.setAttribute('aria-expanded',expanded.has(key));
     nm.onclick=()=>{if(expanded.has(key))expanded.delete(key);else expanded.add(key);setTarget({ref:p,el});renderParts();};
     const col=document.createElement('input');col.type='color';col.value=p.surface.color;col.id='pcol_'+p.id;col.setAttribute('aria-label',p.name+' colour');
@@ -278,6 +311,8 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
     if(/\.(gsc|ghg)$/i.test(n)){const buf=await f.arrayBuffer();const model=parseModel(buf);if(!model.pieces.length)throw new Error('no visible mesh in this model');
       const bytes=new Uint8Array(buf);
       if(forced&&forced.replace){const no=fits(forced.replace,model,n);if(no){skipped.push(no);continue;}setPartModel(forced.replace,n,model,bytes);renderParts();placed++;continue;}
+      if(CH&&CH.bodyModelPath&&keyOf(CH.bodyModelPath)==keyOf(n)){CH.bodyModel=model;bodyMeshes=customBody(model);
+        for(const q of parts)if(q.model){q.fit=boneFit(q.model);if(q.fit)q.place={x:0,y:0,z:0};}placed++;continue;}
       const own=CH&&parts.find(p=>p.entity&&keyOf(p.origModel)==keyOf(n));
       if(own){setPartModel(own,n,model,null);renderParts();placed++;continue;}
       const p=addPart(n,model);p.bytes=bytes;renderParts();select(p);placed++;continue;}
@@ -328,7 +363,8 @@ function loadCharacter(name,bytes){
     if(C.baseName.toLowerCase()!=CH.C.baseName.toLowerCase())throw new Error('this preview scene is for '+C.baseName+', not '+CH.C.baseName);
     CH.scene={name,bytes,C};renderCharacter();say('Preview scene added: the roster will show the new look.');return;}
   resetAll();
-  CH={name,bytes,C,scene:null,refIndex:new Map()};
+  CH={name,bytes,C,scene:null,refIndex:new Map(),hidden:new Set(),bodyModel:null,
+    bodyModelPath:C.body&&!/super_minifig_dx11/i.test(C.body.model.path)?C.body.model.path:null};
   const index=(refs)=>{for(const r of Object.values(refs))CH.refIndex.set(keyOf(r.path),r);};
   if(C.body)for(const [id] of SLOT_INFO){const s=slots[id].surface;const ids=PF.BODY_IDS[id];
     s.refs=refsOf(C,C.body,PF.BODY_TEX_IDS[id]||ids);index(s.refs);
@@ -341,7 +377,7 @@ function loadCharacter(name,bytes){
     Object.assign(p,{entity:r.key,entityName:r.entity||'(character root)',ownBody:!r.entity,slotKind:slotKind(r),origModel:r.model.path,origSpecial:r.special&&r.special.value,special:r.special&&r.special.value,
       visible:r.enabled,origEnabled:r.enabled,rigid:!skinned,origPlace:{...p.place},origColor:p.surface.color});
     p.surface.refs=refsOf(C,r);index(p.surface.refs);
-    p.surface.maps.color.uv=p.surface.maps.color.uvDef=(p.surface.refs.color&&p.surface.refs.color.field=='diffuse_0')?1:0;}
+}
   setHead(C.neck&&Math.abs(C.neck.y-HEAD_UP)<0.002?'up':'normal');CH.origHead=headMode;
   $('bodySec').hidden=!C.body;$('ownBodyNote').hidden=!!C.body;
   // the game's own minifig maps are useful to see but are not what a mod changes
@@ -357,7 +393,7 @@ function fits(p,model,name){if(!p.slotKind)return null;const sk=/\.ghg$/i.test(n
   if(p.ownBody)return 'the character\'s own body model cannot be swapped here';
   if(sk!==p.slotKind.skinned)return name+' is '+(sk?'a skinned model (.ghg)':'a rigid model (.gsc)')+' but '+p.entityName+' holds '+(p.slotKind.skinned?'skinned':'rigid')+' models: the game would not show it there';
   return null;}
-function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);
+function setPartModel(p,name,model,bytes){p.model=model;p.meshes=meshesOf(model);uvDefaults(p.surface,model);p.fit=p.ownBody?null:boneFit(model);if(p.fit){p.place={x:0,y:0,z:0};p.origPlace={x:0,y:0,z:0};}
   if(p.entity&&bytes){const path=PF.selfPath(bytes).toLowerCase();
     if(keyOf(path)==keyOf(p.origModel)){p.newModel=null;p.name=name;return;}
     const names=PF.specialNames(bytes);
@@ -592,13 +628,15 @@ async function loadFromGame(list){try{say('Opening '+list.map(e=>e.path.split('/
   catch(e){say('Could not read it: '+e.message,true);console.error(e);}}
 
 // a character from anywhere gets its models, prints, normal and BRDF maps and preview scene from the game
-async function autoLoadCharacter(){if(!CH||!GAME.entries.size)return;const want=new Map();
+async function autoLoadCharacter(){if(!CH||!GAME.entries.size)return;const me=CH;const want=new Map();
   for(const p of parts)if(p.entity&&!p.model&&!p.newModel){const e=findGame(p.origModel);if(e)want.set(e.path,e);}
   for(const o of [...Object.values(slots),...parts])if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs)){if(o.surface.maps[k].img)continue;const e=findGame(r.path);if(e)want.set(e.path,e);}
+  if(CH.bodyModelPath&&!CH.bodyModel){const e=findGame(CH.bodyModelPath);if(e)want.set(e.path,e);}
   if(!CH.scene){const sp=CH.C.selfPath.replace(/\.prefab_baked$/i,'_cheapminifig.scene_baked');const e=findGame(sp);if(e)want.set(e.path,e);}
   if(!want.size)return;say('Loading '+want.size+' game files for '+CH.C.baseName+'…');
-  const files=[];for(const e of want.values()){try{files.push(await gameFile(e));}catch(err){console.warn(e.path,err);}}
-  await handleFiles(files,null);say(CH.C.baseName+' loaded from the game files.');}
+  const files=[];for(const e of want.values()){if(CH!==me)return;try{files.push(await gameFile(e));}catch(err){console.warn(e.path,err);}}
+  if(CH!==me)return;   // another character was opened meanwhile
+  await handleFiles(files,null);if(CH!==me)return;say(CH.C.baseName+' loaded from the game files.');}
 // the standard minifig's own normal and BRDF maps for the plain body and the example
 const STD_MAPS={head:['head_front','head_front'],body_front:['body_front','body_front'],body_back:['body_front','body_front'],arm_l:['left_arm','left_arm'],arm_r:['right_arm','right_arm'],
   hand_l:['left_hand','right_hand'],hand_r:['left_hand','right_hand'],hips:['hips','hips'],leg_l:['left_leg','left_leg'],leg_r:['right_leg','right_leg']};
@@ -622,7 +660,7 @@ async function loadExample(){
   setMap(sat.surface,'normal',await imgFromURL(SAMPLE_TEX.satchel_nrm),'ADDITIONALMODEL_SATCHEL_NRM (example)');
   setMap(sat.surface,'brdf',await imgFromURL(SAMPLE_TEX.satchel_brdf),'ADDITIONALMODEL_SATCHEL_BRDF (example)');
   expanded.clear();renderBodyRows();renderParts();}
-function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;extraFiles.clear();$('bodySec').hidden=false;$('ownBodyNote').hidden=true;
+function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;bodyMeshes=STD_BODY;extraFiles.clear();$('bodySec').hidden=false;$('ownBodyNote').hidden=true;
   for(const [id] of SLOT_INFO){const s=slots[id].surface;s.refs=null;for(const [k] of MAPS){Object.assign(s.maps[k],{img:null,name:'',dirty:true,src:null,game:null,cleared:false});}s.color=slots[id].defColor;paintColor(s);}
   renderCharacter();}
 $('clearAll').onclick=()=>{resetAll();setHead('normal');renderBodyRows();renderParts();say('Plain minifig. Load textures, parts or a character prefab.');loadStdMaps();};

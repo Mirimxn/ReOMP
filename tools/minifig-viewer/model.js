@@ -1,6 +1,16 @@
 // Skywalker Saga GSC / GHG mesh reader (HSEM chunk, version 0xC9)
 const VAR_POS=0,VAR_UV01=5,VAR_BLEND=9;
 function halfToFloat(h){const s=(h&0x8000)?-1:1,e=(h>>10)&31,f=h&1023;if(e==0)return s*f*Math.pow(2,-24);if(e==31)return f?NaN:s*Infinity;return s*(1+f/1024)*Math.pow(2,e-15);}
+// skeleton (LOGH): bone names and parents, then a table of local bind matrices (row-vector, translation in the last row);
+// world = local x parent world. Returned matrices have the same memory layout a WebGL model matrix uses.
+function parseSkeleton(u8,dv){let o=-1;for(let i=0;i<u8.length-4;i++)if(u8[i]==0x4c&&u8[i+1]==0x4f&&u8[i+2]==0x47&&u8[i+3]==0x48){o=i;break;}
+  if(o<0)return null;try{const n=dv.getUint32(o+12,false);if(!n||n>512)return null;let p=o+16;const bones=[];
+    for(let i=0;i<n;i++){const L=dv.getUint16(p,false);let name='';for(let k=0;k<L-1;k++)name+=String.fromCharCode(u8[p+2+k]);p+=2+L+64+12;const par=u8[p];p+=2;bones.push({name,parent:par==0xff?-1:par});}
+    if(dv.getUint32(p+4,false)!==n)return null;p+=8;
+    for(let i=0;i<n;i++){const l=new Float32Array(16);for(let k=0;k<16;k++)l[k]=dv.getFloat32(p+64*i+4*k,false);const b=bones[i];
+      b.world=b.parent>=0&&b.parent<i?mul4(l,bones[b.parent].world):l;}
+    return bones;}catch(e){return null;}}
+function mul4(a,b){const o=new Float32Array(16);for(let r=0;r<4;r++)for(let c=0;c<4;c++){let s=0;for(let k=0;k<4;k++)s+=a[r*4+k]*b[k*4+c];o[r*4+c]=s;}return o;}
 function parseModel(buf){
   const u8=new Uint8Array(buf),dv=new DataView(buf);const be=(p)=>dv.getUint32(p,false);
   const find=(s,from)=>{const c=[...s].map(ch=>ch.charCodeAt(0));outer:for(let i=from||0;i<u8.length-c.length;i++){for(let k=0;k<c.length;k++)if(u8[i+k]!=c[k])continue outer;return i;}return -1;};
@@ -47,6 +57,6 @@ function parseModel(buf){
     const idx=new Uint16Array(P.icnt);for(let k=0;k<P.icnt;k++)idx[k]=dv.getUint16(I.data+2*(P.ioff+k),true);
     return {pos,uv0,uv1,idx,mn:g.mn,mx:g.mx};});
   const skinned=use.some(P=>has(P,VAR_BLEND));
-  return {pieces,skinned,hasUV1};
+  return {pieces,skinned,hasUV1,bones:parseSkeleton(u8,dv)};
 }
-if(typeof module!='undefined')module.exports={parseModel};
+if(typeof module!='undefined')module.exports={parseModel,mul4};
