@@ -179,7 +179,7 @@ function readCharacter(d){
   let roster=null;for(const o of findAll(d,'Characters\0',hdrEnd)){if(v.getUint32(o-4,true)!==11)continue;const L=v.getUint32(o+27,true);
     if(L>1&&L<80){roster={pos:o,lenPos:o+27,name:latin(d,o+31,o+31+L-1)};break;}}
   const body=renders.find(r=>r.entity==''&&/super_(minifig|minifig_customiser|small)_dx11/i.test(r.model.path))||null;   // minifig-shaped bodies (standard, customiser, small); others (droids…) are shown as parts
-  return {S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,offsets,
+  return {d,S,O,D,olo,selfPath:sp,file,isScene,baseName,renders,roster,hdrEnd,neck,offsets,
     body,attachments:renders.filter(r=>r!==body)};}
 // the apiEntity object of a full entity path ("Parent/Child")
 function entityOf(O,full){return O.find(y=>y.class=='apiEntity'&&(y.path?y.path+'/':'')+y.entity==full);}
@@ -217,6 +217,47 @@ function encodeBC7(px,w,h){const levels=[];let cur=px,cw=w,ch=h,m=0;
   while(true){levels.push(encodeBC7Level(cur,cw,ch));m++;if(cw==1&&ch==1)break;[cur,cw,ch]=halve(cur,cw,ch);}
   return {mips:m,data:cat(levels)};}
 
+
+// ---------- copying from another character (a donor): voice and sounds, the body's animation set, the look of carried items
+// Only handles inside objects both characters already have are swapped (the game ignores added entities), so behaviour
+// (how an item is used, which abilities exist) stays the base's.
+const strAt=(d,p)=>{const L=dv(d).getUint32(p,true);return L>0&&L<200?latin(d,p+4,p+4+L-1).replace(/\0+$/,''):null;};
+function emitterEntries(C,x){const T=C.D.traceOf(x);if(C.D.bad)return null;const out={};let cur=null;
+  for(const [n,k,p] of T){if(n=='ID'&&k=='type')cur=strAt(C.d,p);
+    else if(n=='Event'&&k=='handle'&&cur!=null){const path=handlePath(C.d,p);if(path&&!(cur in out))out[cur]={pos:p,path};cur=null;}}
+  return out;}
+const outsideItems=(x)=>!/^(Items|Abilities)(\/|$)/.test(x.path);
+// voice and sound effects: emitters on the same entity path, entry by entry (VO_Agree, Foley_Step…)
+function soundPairs(C,U){const out=[];const ue=U.O.filter(y=>y.class=='nttAudio::ComponentEmitter'&&outsideItems(y)).map(y=>[y,emitterEntries(U,y)||{}]);let total=0;
+  for(const x of C.O){if(x.class!='nttAudio::ComponentEmitter'||!outsideItems(x))continue;const a=emitterEntries(C,x);if(!a)continue;total+=Object.keys(a).length;
+    let best=null,bn=0;for(const [y,b] of ue){if(y.path!==x.path)continue;const n=Object.keys(a).filter(k=>k in b).length;if(n>bn){bn=n;best=b;}}
+    if(!best)continue;
+    for(const [k,e] of Object.entries(a)){const f=best[k];if(f&&f.path.toLowerCase()!==e.path.toLowerCase())out.push({pos:e.pos,from:f.pos,old:e.path,path:f.path,what:k});}}
+  return {pairs:out,total};}
+// the body's animation set: the root AnimBlendTreeComponent's *_animation.pod_baked
+function animSet(C){   // the component does not decode fully, so look for the handle by its file name inside it
+  for(const x of C.O){if(x.class!='AnimBlendTreeComponent'||x.path!=='')continue;const lo=x.o,hi=x.end;
+    for(let p=lo;p<hi-30;p++){if(C.d[p]!==2||C.d[p+1]||C.d[p+2]||C.d[p+3]||C.d[p+4]!==1)continue;const L=dv(C.d).getUint32(p+21,true);if(L<8||L>200||p+25+L>hi)continue;
+      const path=latin(C.d,p+25,p+25+L-1);if(/^[\x20-\x7e]+_animation\.pod_baked$/i.test(path))return {pos:p,path};}}
+  return null;}
+// carried items: Items/<name> entities with their drawn models and texture handles
+function itemsOf(C){const items=[];
+  for(const x of C.O){const m=/^Items\/([^/]+)$/.exec(x.path);if(!m||x.class!='apiEntity'||items.some(i=>i.path==x.path))continue;
+    const renders=[];
+    for(const y of C.O){if(y.class!='nttRenderTTExportObject'||!(y.path==x.path||y.path.startsWith(x.path+'/')))continue;const T=C.D.traceOf(y);if(C.D.bad)continue;
+      const hs=[];const seen={};for(const [n,k,p] of T){if(k!='handle')continue;const path=handlePath(C.d,p);const i=seen[n]=(seen[n]||0)+1;hs.push({field:n,n:i,pos:p,path});}
+      const model=hs.find(h=>h.field=='Model Resource'&&h.path);if(model)renders.push({path:y.path,handles:hs,model:model.path});}
+    if(renders.length)items.push({name:m[1],path:x.path,renders,model:renders[0].model});}
+  return items;}
+// the handles that make a base item look like a donor item: renders paired in order, fields by name and occurrence
+function itemPairs(C,item,U,uitem){const out=[];
+  item.renders.forEach((r,i)=>{const u=uitem.renders[i];if(!u)return;
+    for(const h of r.handles){const g=u.handles.find(q=>q.field==h.field&&q.n==h.n);if(!g)continue;
+      if((g.path||'').toLowerCase()===(h.path||'').toLowerCase())continue;if(!g.path&&!h.path)continue;
+      out.push({pos:h.pos,from:g.pos,old:h.path,path:g.path,what:item.name+' '+h.field});}});
+  return out;}
+const handleAt=(d,p)=>d.slice(p,p+handleLen(d,p));
+
 // ---------- applying edits to a prefab or scene
 function apply(d0,plan,ctx){
   const C=readCharacter(d0);const d=d0.slice();const v=dv(d);const edits=[];const log=[];
@@ -250,6 +291,14 @@ function apply(d0,plan,ctx){
         if(!tex&&!s.path)continue;putHandle(s.pos,tex&&tex.path,tex&&tex.id);}}
     if(pc.place&&r.transform){const p=r.transform.pos;pc.place.forEach((c,i)=>{const dl=c-r.transform.local[i];v.setFloat32(p+4*(8+i),c,true);v.setFloat32(p+4*(20+i),r.transform.world[i]+dl,true);});}}
   if(plan.neckLift!=null&&C.neck)v.setFloat32(C.neck.pos+4,plan.neckLift,true);
+  // donors: swap handles for the donor's (same resource ids), and remember their load-list records
+  const donorPaths=[];
+  for(const dn of plan.donors||[]){const U=dn.C;let prs=[];
+    if(dn.sounds)prs=prs.concat(soundPairs(C,U).pairs);
+    if(dn.anim){const a=animSet(C),b=animSet(U);if(a&&b&&a.path.toLowerCase()!==b.path.toLowerCase())prs.push({pos:a.pos,from:b.pos,old:a.path,path:b.path,what:'animations'});}
+    for(const [ip,up] of dn.items||[]){const it=itemsOf(C).find(i=>i.path==ip),ut=itemsOf(U).find(i=>i.path==up);if(it&&ut)prs=prs.concat(itemPairs(C,it,U,ut));}
+    for(const p of prs){if(edits.some(e=>e[0]==p.pos))continue;edits.push([p.pos,handleLen(d0,p.pos),p.path?handleAt(U.d,p.from):EMPTY_HANDLE]);if(p.path)donorPaths.push([p.path,U]);}
+    log.push(dn.label+': '+prs.length+' handles from '+U.baseName);}
   // own name and roster link (names keep the base's length, so the header name tree is untouched)
   const B=C.baseName.toLowerCase(),N=plan.internalName.toLowerCase();if(N.length!=B.length)throw new Error('internal name must have '+B.length+' letters');
   const lower=d.map(c=>c>=65&&c<=90?c+32:c);
@@ -284,6 +333,9 @@ function apply(d0,plan,ctx){
   for(const [oldp,newp] of modelSwaps){for(const [a,b] of [[oldp,newp],[oldp.replace(/_dx11\./,'_nxg.'),newp.replace(/_dx11\./,'_nxg.')]]){
       const k=paths.indexOf(a);if(k<0||paths.includes(b))continue;entries.push([b,H.recs[k]]);
       if(find(out,enc(oldp+'\0'),ov.getUint32(0,false)+4)<0)dropOld.add(a);}}
+  {const known=new Set(paths.map(p=>p.toLowerCase()).concat(entries.map(e=>e[0].toLowerCase())));const cache=new Map();
+    for(const [p,U] of donorPaths){if(!cache.has(U)){const DU=Deps(U.d);const m=new Map();for(let k=0;k<DU.nrec;k++){const q=DU.path(DU.recNode(k)).toLowerCase();if(!m.has(q))m.set(q,[]);m.get(q).push(DU.recs[k]);}cache.set(U,m);}
+      const m=cache.get(U);for(const q of [p.toLowerCase(),p.toLowerCase().replace(/_dx11\./,'_nxg.')]){if(known.has(q))continue;known.add(q);for(const r of m.get(q)||[])entries.push([q,r]);}}}
   if(entries.length)out=addDependencies(out,entries);
   if(dropOld.size)out=dropRecords(out,(p)=>!dropOld.has(p));
   return {data:out,selfPath:C.newSelfPath,log};}
@@ -309,6 +361,6 @@ function zip(files){const local=[],central=[];let off=0;
 function specialNames(m){const out=[];for(let i=0;i<m.length-2;i++){if(m[i]===36&&(i==0||m[i-1]===0)){let e=i+1;while(e<m.length&&e-i<64&&((m[e]>=48&&m[e]<=57)||(m[e]>=65&&m[e]<=90)||(m[e]>=97&&m[e]<=122)||m[e]===95))e++;
   if(m[e]===0&&e-i>3){const s=latin(m,i+1,e);if(!out.includes(s))out.push(s);}}}return out;}
 
-return {Schema,objtable,Dec,Deps,readCharacter,apply,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
+return {Schema,objtable,Dec,Deps,readCharacter,apply,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
 })();
 if(typeof module!='undefined')module.exports=PF;

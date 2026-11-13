@@ -44,3 +44,12 @@ game textures (`.texture`, BC1/BC3/BC7 `.dds`, PNG) and models (`.gsc` rigid, `.
 - A part fitted to the hips whose geometry sits on the torso (Fode and Beed's front arms) follows the torso lift.
 - Not done: face Upper/Lower material IDs are matched by order and may be off. Which top letter each mesh is cannot be told apart when two tops share their bounds.
 - Joint lifts: every `AttachmentOffsetComponent` (Joint + Offset) of an attachment moves that joint of the body while the attachment is shown: Fode and Beed's tail lifts `SpineBase` by 1.2 cm so it fits between hips and torso; CaribDiss's extra model lifts `Neck` by 1 cm. Body pieces and parts above the joint move with it.
+
+## Copying from other characters
+
+The character panel can add other characters (from the game folder or a `.prefab_baked` file) and take from them, all from one or each from its own:
+- **Animations:** the root `AnimBlendTreeComponent`'s `*_animation.pod_baked` handle (found by its name inside the component, which does not decode fully).
+- **Voice and sounds:** `nttAudio::ComponentEmitter` entries outside `Items`/`Abilities`, matched by entity path and entry `ID` (`VO_Agree`, ...); unmatched entries keep the base's.
+- **Item looks:** for an `Items/<name>` entity, its render objects are paired in order with the donor item's and their handles (model, textures) swapped field by field. How the item is used stays the base's.
+
+Swapped handles are copied byte for byte from the donor (same resource ids), and the donor's load-list records for every new path (and its `_nxg` twin) are added. Nothing is added or removed from the object tree, since the game ignores added entities.

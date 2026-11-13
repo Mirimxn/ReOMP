@@ -76,6 +76,18 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
 .game-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:8px}
 .results{display:flex;flex-direction:column;gap:2px;max-height:260px;overflow:auto;margin-top:6px;border:1px solid var(--line);border-radius:6px;padding:3px}
 .results:empty{display:none}
+.copy-box{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.copy-box h3.sub{font-size:12.5px;margin:0 0 4px}
+.donor-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.donor-chips:empty{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;background:var(--chip);border-radius:999px;padding:2px 4px 2px 8px}
+.chip button{border:0;background:none;color:var(--muted);cursor:pointer;font:inherit;padding:0 4px;border-radius:999px}
+.chip button:hover{color:var(--fg)}
+.copy-rows{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr);gap:5px 8px;align-items:center;margin-top:8px;font-size:12px}
+.copy-rows:empty{display:none}
+.copy-rows label{color:var(--muted);overflow-wrap:anywhere}
+.copy-rows select{min-width:0;width:100%}
+.copy-rows .sep{grid-column:1/-1;border-top:1px solid var(--line);margin:2px 0}
 .hit{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;font:inherit;border:0;background:none;color:var(--fg);padding:4px 6px;border-radius:4px;cursor:pointer;min-width:0}
 .hit:hover,.hit:focus-visible{background:var(--chip)}
 .hit-name{font-family:var(--mono);font-size:11.5px;overflow-wrap:anywhere}
@@ -122,13 +134,22 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <h2>Character</h2>
       <dl class="facts">
         <dt>Base</dt><dd id="charBase"></dd>
-        <dt>Abilities</dt><dd>from the base: its moves, voice, weapon and class abilities come with the prefab</dd>
+        <dt>Abilities</dt><dd>from the base: its moves and class abilities come with the prefab</dd>
         <dt>Roster row</dt><dd id="charRow"></dd>
         <dt>Preview</dt><dd id="charScene"></dd>
         <dt>Slots</dt><dd id="charSlots"></dd>
       </dl>
       <p class="hint" id="charNeed" style="margin-top:8px"></p>
       <p class="hint" style="margin-top:6px">Change colours and textures below. A part's <b>Model…</b> button swaps its model; unticking a part leaves it out. The character can only use the part slots its base has: a rigid model (.gsc) fits a rigid slot, a skinned one (.ghg) a skinned slot.</p>
+      <div class="copy-box">
+        <h3 class="sub">Copy from other characters</h3>
+        <p class="hint">Animations, voice and sounds, and the look of carried items can come from other characters, all from one or each from its own.</p>
+        <div class="game-search"><input id="donorSearch" type="search" placeholder="Add a character to copy from (name)" aria-label="Find a character to copy from"><button class="btn" id="donorFileBtn" title="Add a .prefab_baked file">File…</button></div>
+        <input type="file" id="donorFile" accept=".prefab_baked" hidden>
+        <div class="results" id="donorHits"></div>
+        <div class="donor-chips" id="donorChips"></div>
+        <div class="copy-rows" id="copyRows"></div>
+      </div>
       <div style="margin-top:6px"><button class="btn icon" id="charFiles" title="Saves the character and every game file it uses as a ZIP">Save its files</button></div>
     </section>
     <p class="hint" id="ownBodyNote" hidden>This character has its own body model instead of the standard minifig; it is listed under Parts.</p>

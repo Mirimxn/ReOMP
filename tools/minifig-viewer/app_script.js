@@ -407,7 +407,7 @@ function loadCharacter(name,bytes){
     if(C.baseName.toLowerCase()!=CH.C.baseName.toLowerCase())throw new Error('this preview scene is for '+C.baseName+', not '+CH.C.baseName);
     CH.scene={name,bytes,C};renderCharacter();say('Preview scene added: the roster will show the new look.');return;}
   resetAll();
-  CH={name,bytes,C,droidTop:hat?hat[1].toUpperCase():null,scene:null,refIndex:new Map(),hidden:new Set(),bodyModel:null,
+  CH={name,bytes,C,donors:[],copy:{anim:-1,sounds:-1,items:{}},items:PF.itemsOf(C),droidTop:hat?hat[1].toUpperCase():null,scene:null,refIndex:new Map(),hidden:new Set(),bodyModel:null,
     bodyModelPath:C.body&&!/super_minifig_dx11/i.test(C.body.model.path)?C.body.model.path:null};
   const index=(refs)=>{for(const r of Object.values(refs))CH.refIndex.set(keyOf(r.path),r);};
   if(C.body)for(const [id] of SLOT_INFO){const s=slots[id].surface;const ids=PF.BODY_IDS[id];
@@ -470,6 +470,59 @@ function specialEditor(p){const w=document.createElement('div');w.className='par
   const dl=document.createElement('datalist');dl.id='spl_'+p.id;for(const n of ['[All Specials]',...p.newModel.names]){const o=document.createElement('option');o.value=n;dl.append(o);}
   i.oninput=()=>{p.special=i.value;};w.append(l,i,dl);return w;}
 
+
+// ---------- copying animations, voice and sounds, and item looks from other characters
+const cleanName=(s)=>s.replace(/\0[\s\S]*$/,'');
+const itemLabel=(it)=>cleanName(it.name)+' ('+it.model.split('/').pop().replace(/_dx11\.gsc$/i,'').toLowerCase()+')';
+function addDonor(name,bytes){if(!CH)return;let C;try{C=PF.readCharacter(bytes);}catch(e){say('Could not read '+name+': '+e.message,true);return;}
+  if(C.baseName.toLowerCase()==CH.C.baseName.toLowerCase()){say(C.baseName+' is the base already.',true);return;}
+  if(CH.donors.some(d=>d.C.baseName.toLowerCase()==C.baseName.toLowerCase())){say(C.baseName+' is in the list already.');return;}
+  CH.donors.push({name:C.baseName,C,items:PF.itemsOf(C),anim:PF.animSet(C),sounds:PF.soundPairs(CH.C,C)});
+  $('donorSearch').value='';$('donorHits').textContent='';renderCopy();say(C.baseName+' added: choose below what to copy from it.');}
+function removeDonor(i){CH.donors.splice(i,1);const fix=(v)=>v==i?-1:v>i?v-1:v;CH.copy.anim=fix(CH.copy.anim);CH.copy.sounds=fix(CH.copy.sounds);
+  for(const k of Object.keys(CH.copy.items)){const c=CH.copy.items[k];if(!c)continue;if(c[0]==i)CH.copy.items[k]=null;else if(c[0]>i)c[0]--;}renderCopy();}
+function selectRow(label,opts,value,onchange){const l=document.createElement('label');l.textContent=label;const s=document.createElement('select');
+  for(const [v,t,dis] of opts){const o=document.createElement('option');o.value=v;o.textContent=t;if(dis)o.disabled=true;s.append(o);}
+  s.value=value;s.onchange=()=>{onchange(s.value);renderCopy();};const id='cp'+Math.random().toString(36).slice(2);s.id=id;l.htmlFor=id;$('copyRows').append(l,s);}
+function renderCopy(){const box=$('copyRows'),chips=$('donorChips');box.textContent='';chips.textContent='';if(!CH)return;
+  CH.donors.forEach((d,i)=>{const c=document.createElement('span');c.className='chip';c.textContent=d.name;const b=document.createElement('button');b.textContent='×';b.title='Remove '+d.name;b.onclick=()=>removeDonor(i);c.append(b);chips.append(c);});
+  if(!CH.donors.length)return;const base=CH.C.baseName+' (base)';const D=CH.donors;
+  // everything from one character
+  const all=D.findIndex((d,i)=>CH.copy.anim==i&&CH.copy.sounds==i&&CH.items.every((it,k)=>{const c=CH.copy.items[it.path];return d.items[k]?c&&c[0]==i&&c[1]==d.items[k].path:!c;}));
+  const none=CH.copy.anim<0&&CH.copy.sounds<0&&CH.items.every(it=>!CH.copy.items[it.path]);
+  selectRow('Everything',[['mix',none?'—':'Mixed (set below)',true],['-1',base],...D.map((d,i)=>[String(i),d.name])],none?'-1':all>=0?String(all):'mix',(v)=>{const i=+v;
+    CH.copy.anim=i;CH.copy.sounds=i;for(const [k,it] of CH.items.entries()){const u=i>=0&&D[i].items[k];CH.copy.items[it.path]=u?[i,u.path]:null;}});
+  const sep=document.createElement('div');sep.className='sep';box.append(sep);
+  selectRow('Animations',[['-1',base],...D.map((d,i)=>[String(i),d.name+(d.anim?'':' (none found)'),!d.anim])],String(CH.copy.anim),(v)=>CH.copy.anim=+v);
+  selectRow('Voice and sounds',[['-1',base],...D.map((d,i)=>[String(i),d.name+' ('+d.sounds.pairs.length+' of '+d.sounds.total+' match)',!d.sounds.pairs.length])],String(CH.copy.sounds),(v)=>CH.copy.sounds=+v);
+  if(!CH.items.length){const l=document.createElement('label');l.textContent='Items';const t=document.createElement('span');t.className='hint';t.textContent=CH.C.baseName+' carries no items.';box.append(l,t);}
+  for(const it of CH.items){const c=CH.copy.items[it.path];const opts=[['',base+': '+itemLabel(it)]];
+    D.forEach((d,i)=>d.items.forEach(u=>opts.push([i+'|'+u.path,d.name+': '+itemLabel(u)])));
+    selectRow('Item: '+cleanName(it.name),opts,c?c[0]+'|'+c[1]:'',(v)=>{if(!v){CH.copy.items[it.path]=null;return;}const j=v.indexOf('|');CH.copy.items[it.path]=[+v.slice(0,j),v.slice(j+1)];});}
+  issueKey='';renderIssues();}
+// what export hands to PF.apply: one entry per donor with what it gives
+function donorPlan(){if(!CH)return [];const out=[];
+  CH.donors.forEach((d,i)=>{const items=CH.items.filter(it=>{const c=CH.copy.items[it.path];return c&&c[0]==i;}).map(it=>[it.path,CH.copy.items[it.path][1]]);
+    const e={C:d.C,label:d.name,anim:CH.copy.anim==i,sounds:CH.copy.sounds==i,items};if(e.anim||e.sounds||items.length)out.push(e);});
+  return out;}
+function copyIssues(){if(!CH||!CH.donors.length)return [];const out=[];const D=CH.donors;
+  const a=D[CH.copy.anim];if(a){if(!a.C.body!==!CH.C.body)out.push('Animations from '+a.name+' are made for a different body than '+CH.C.baseName+"'s, so they may not play right.");}
+  const s=D[CH.copy.sounds];if(s&&s.sounds.pairs.length<s.sounds.total)out.push((s.sounds.total-s.sounds.pairs.length)+' of '+CH.C.baseName+"'s "+s.sounds.total+' sounds have no match in '+s.name+' and stay the base\'s.');
+  for(const it of CH.items){const c=CH.copy.items[it.path];if(!c)continue;const d=D[c[0]],u=d.items.find(x=>x.path==c[1]);if(!u)continue;
+    out.push('Item '+cleanName(it.name)+' takes the look of '+d.name+"'s "+cleanName(u.name)+' only: it is still used like '+CH.C.baseName+"'s item"+(u.renders.length!=it.renders.length?' and only '+Math.min(u.renders.length,it.renders.length)+' of its models are swapped':'')+'.');}
+  return out;}
+let donorTimer=0;$('donorSearch').oninput=()=>{clearTimeout(donorTimer);donorTimer=setTimeout(searchDonors,120);};
+function searchDonors(){const box=$('donorHits');box.textContent='';const q=$('donorSearch').value.trim().toLowerCase();if(!q)return;
+  if(!GAME.entries.size){box.textContent='';say('Connect the game folder to search its characters, or add a .prefab_baked file.',true);return;}
+  const out=[];const seen=new Set();for(const [p,e] of GAME.entries){if(p!==e.path||seen.has(e))continue;if(!/\.prefab_baked$/i.test(p)||!/(^|\/)chars\/minifig\//.test(p))continue;
+    const f=p.split('/').pop();if(!f.includes(q))continue;seen.add(e);out.push(e);if(out.length>=40)break;}
+  for(const e of out){const b=document.createElement('button');b.className='hit';const n=e.path.split('/');const a=document.createElement('span');a.className='hit-name';a.textContent=n.pop();
+    const d=document.createElement('span');d.className='hit-dir';d.textContent=n.join('/')+' · '+e.src;b.append(a,d);b.title='Copy from '+e.path;
+    b.onclick=async()=>{try{say('Reading '+e.path.split('/').pop()+'…');addDonor(e.path.split('/').pop(),await readGame(e));}catch(err){say('Could not read it: '+err.message,true);}};box.append(b);}
+  if(!out.length){const t=document.createElement('div');t.className='hint';t.style.padding='4px 6px';t.textContent='No character prefab matches.';box.append(t);}}
+$('donorFileBtn').onclick=()=>$('donorFile').click();
+$('donorFile').onchange=async(e)=>{const f=e.target.files[0];e.target.value='';if(f)addDonor(f.name,new Uint8Array(await f.arrayBuffer()));};
+
 // what the character panel shows: base, abilities, preview, and the game files still to drop
 function renderCharacter(){const sec=$('charSec'),ex=$('exportSec');sec.hidden=ex.hidden=!CH;if(!CH)return;const C=CH.C;
   $('charBase').textContent=C.baseName;$('charRow').textContent=C.roster?C.roster.name:'(none found)';
@@ -478,7 +531,7 @@ function renderCharacter(){const sec=$('charSec'),ex=$('exportSec');sec.hidden=e
   for(const p of parts)if(p.entity&&!p.model&&!p.newModel)need.push(baseFile(p.origModel));
   for(const o of allOwners())if(o.surface.refs&&o.surface.refs.color&&!o.surface.maps.color.img&&!o.surface.maps.color.cleared)need.push(baseFile(o.surface.refs.color.path));
   const u=[...new Set(need)];$('charNeed').textContent=u.length?'To see it as in the game, drop: '+u.join(', '):'All its models and prints are loaded.';
-  renderSlots();issueKey='';renderIssues();
+  renderSlots();renderCopy();issueKey='';renderIssues();
   if(!$('expId').value)$('internalName').textContent='';else $('internalName').textContent=internalName($('expId').value,C.baseName);}
 
 function internalName(id,base){const L=base.length;const s=id.replace(/[^A-Za-z0-9]/g,'');const h=PF.crc32(PF.enc(id.toUpperCase())).toString(36).toUpperCase().padStart(7,'0');
@@ -503,6 +556,7 @@ function gameIssues(){if(!CH)return [];const out=[];const C=CH.C;const all=[...(
   if(headMode=='hidden')out.push('The hidden head is only hidden here.');
   if(!C.neck&&headMode=='up')out.push(C.baseName+' has no neck lift, so the head stays at normal height.');
   if($('swapLR').checked)out.push('Swapping left and right textures changes this view only.');
+  out.push(...copyIssues());
   return out;}
 let issueKey='';
 function renderIssues(){const l=gameIssues();const k=l.join('\n');if(k===issueKey)return;issueKey=k;$('issueBox').hidden=!l.length;const ul=$('issues');ul.textContent='';
@@ -547,7 +601,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     if(m.game&&(!ref||m.game.path!=ref.path))return m.game;
     if(m.cleared)return null;
     return undefined;}   // unchanged
-  const P=pname.toLowerCase();const plan={internalName:pname,rosterRow:'OMP_'+id,body:{},parts:[]};
+  const P=pname.toLowerCase();const plan={internalName:pname,rosterRow:'OMP_'+id,body:{},parts:[],donors:donorPlan()};
   if(C.neck&&headMode!='hidden'&&headMode!=CH.origHead)plan.neckLift=headMode=='up'?HEAD_UP:0;
   for(const [sid] of SLOT_INFO){const s=slots[sid].surface,ch={};
     if(s.color.toLowerCase()!=(s.origColor||'').toLowerCase())ch.tint=linOf(s.color);
