@@ -1,9 +1,9 @@
 <script>
 const SLOT_INFO=[
   ['head','Head','#e3b48a',/HEAD|FACE/],['body_front','Torso front','#f2f2f0',/BODY.*FRONT|TORSO.*FRONT|FRONT/],['body_back','Torso back','#f2f2f0',/BODY.*BACK|TORSO.*BACK|BACK/],
-  ['arm_l','Left arm','#f2f2f0',/ARM.*LEFT|LEFT.*ARM/],['arm_r','Right arm','#f2f2f0',/ARM.*RIGHT|RIGHT.*ARM/],
-  ['hand_r','Right hand','#1b1b1b',/HAND.*RIGHT|RIGHT.*HAND/],['hand_l','Left hand','#1b1b1b',/HAND/],['hips','Hips','#f2f2f0',/HIP/],['leg_l','Left leg','#f2f2f0',/LEG.*LEFT|LEFT.*LEG/],
-  ['leg_r','Right leg','#f2f2f0',/LEG.*RIGHT|RIGHT.*LEG/]];
+  ['arm_l','Left arm','#f2f2f0',/ARM.*LEFT|LEFT.*ARM/],['arm_r','Right arm','#f2f2f0',/ARM.*RIGH?T|RIGH?T.*ARM/],
+  ['hand_r','Right hand','#1b1b1b',/HAND.*RIGH?T|RIGH?T.*HAND/],['hand_l','Left hand','#1b1b1b',/HAND/],['hips','Hips','#f2f2f0',/HIP/],['leg_l','Left leg','#f2f2f0',/LEG.*LEFT|LEFT.*LEG/],
+  ['leg_r','Right leg','#f2f2f0',/LEG.*RIGH?T|RIGH?T.*LEG/]];
 const HIDDEN_SLOTS={waist:'hips',neck:'head'};   // small studs take the colour of their neighbour
 // texture kinds a material can hold, and how a file name says which one it is
 const MAPS=[['color','Colour',null],['normal','Normal',/(_|\b)(NRM|NORM|NORMAL|NML)(_|\.|\b|$)/i],['brdf','BRDF',/(_|\b)(BRDF|BDRF|ROUGH|SPEC)(_|\.|\b|$)/i],['emission','Emission',/(_|\b)(EMI|EMIS|EMISSIVE|EMISSION|GLOW)(_|\.|\b|$)/i]];
@@ -177,22 +177,24 @@ for(const b of document.querySelectorAll('#headSeg button'))b.onclick=()=>setHea
 const b64=(s)=>{const bin=atob(s);const u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u.buffer;};
 const slots={};for(const [id,label,color] of SLOT_INFO)slots[id]={id,label,surface:makeSurface(color,true),defColor:color};
 let bodyMeshes=[];const STD_BODY=bodyMeshes;
-for(const p of BODY){const pos=new Float32Array(b64(p.pos)),uv0=new Float32Array(b64(p.uv0)),uv=new Float32Array(b64(p.uv)),idx=new Uint16Array(b64(p.idx));
+// the character's left is +x in the game (LEFT_ARM_DX11 sits at x>0); the stored pieces were named by screen side
+const GAME_SIDE={arm_l:'arm_r',arm_r:'arm_l',leg_l:'leg_r',leg_r:'leg_l'};
+for(const p0 of BODY){const p={...p0,slot:GAME_SIDE[p0.slot]||p0.slot};const pos=new Float32Array(b64(p.pos)),uv0=new Float32Array(b64(p.uv0)),uv=new Float32Array(b64(p.uv)),idx=new Uint16Array(b64(p.idx));
   if(p.slot!='hands'){bodyMeshes.push({g:geom(pos,uv0,uv,idx),slot:p.slot,follows:HIDDEN_SLOTS[p.slot]||null});continue;}
   // the hands are one piece in the model: split it by side so each hand has its own material (materials 7 and 8)
   for(const [slot,left] of [['hand_l',true],['hand_r',false]]){const keep=[];
-    for(let i=0;i<idx.length;i+=3){const cx=pos[idx[i]*3]+pos[idx[i+1]*3]+pos[idx[i+2]*3];if((cx<0)==left)keep.push(idx[i],idx[i+1],idx[i+2]);}
+    for(let i=0;i<idx.length;i+=3){const cx=pos[idx[i]*3]+pos[idx[i+1]*3]+pos[idx[i+2]*3];if((cx>0)==left)keep.push(idx[i],idx[i+1],idx[i+2]);}
     bodyMeshes.push({g:geom(pos,uv0,uv,new Uint16Array(keep)),slot,follows:null});}}
 // a character's own minifig-shaped body (customiser, small): each piece goes to the body slot it sits in, judged against its skeleton
 function customBody(model){const B={};for(const b of model.bones||[])B[b.name]=b.world;const y=(n,d)=>B[n]?B[n][13]:d;
   const neck=y('Neck',0.289),hips=y('Hips',0.113),lh=B.LeftHand,rh=B.RightHand;const out=[];
   for(const pc of model.pieces){const c=[0,1,2].map(i=>(pc.mn[i]+pc.mx[i])/2);let slot;
     const near=(h)=>h&&Math.hypot(c[0]-h[12],c[1]-h[13],c[2]-h[14])<0.035;
-    if(c[1]>neck-0.004)slot='head';else if(near(lh)||near(rh))slot=c[0]<0?'hand_l':'hand_r';
-    else if(Math.abs(c[0])>0.055&&c[1]>hips)slot=c[0]<0?'arm_l':'arm_r';
+    if(c[1]>neck-0.004)slot='head';else if(near(lh)||near(rh))slot=c[0]>0?'hand_l':'hand_r';
+    else if(Math.abs(c[0])>0.055&&c[1]>hips)slot=c[0]>0?'arm_l':'arm_r';
     else if(Math.abs(c[0])<0.03&&c[1]<hips+0.015&&pc.mx[1]-pc.mn[1]<0.06)slot='hips';
     else if(c[1]>hips)slot=c[2]<0?'body_front':'body_back';   // the face looks along -z
-    else slot=c[0]<0?'leg_l':'leg_r';
+    else slot=c[0]>0?'leg_l':'leg_r';
     out.push({g:geom(pc.pos,pc.uv0,model.hasUV1?pc.uv1:pc.uv0,pc.idx),slot,follows:null});}
   // the hips (and waist) are rigid pieces in these bodies
   const mats=model.materials||[];
@@ -262,7 +264,7 @@ const HEAD_BONES=/^(head|neck|neckdriven|hat|hair|glasses)$/i;
 // parts that replace pieces of the body: a custom head (face models with their own head) or whole arms
 function hiddenSlots(){const h=new Set();for(const p of parts){if(!p.visible||!p.model||!p.model.bones)continue;const names=p.model.bones.map(b=>b.name);
     if(names.some(n=>/^(head|neck)_match$/i.test(n))&&!/super_face|facetex/i.test(p.origModel||p.name))h.add('head');
-    for(const [bone,slots] of [['LeftArm',['arm_r']],['RightArm',['arm_l']]])if(p.fit&&p.fit.own==bone)slots.forEach(x=>h.add(x));}
+    for(const [bone,slots] of [['LeftArm',['arm_l']],['RightArm',['arm_r']]])if(p.fit&&p.fit.own==bone)slots.forEach(x=>h.add(x));}
   return h;}
 // ---------- several materials in one model: the draw list says which material each piece uses; the prefab's overrides are
 // matched to the materials by name (head_fode_diff -> Fode_MAT); shadow impostors and occluders are not drawn
@@ -382,7 +384,7 @@ window.addEventListener('drop',(e)=>{e.preventDefault();dragDepth=0;$('drop').hi
 // ---------- character prefab: load a game character, dress it, export it as a mod
 // The prefab carries the character's abilities, voice and behaviour; its parts and materials are what can change.
 const TEX_FOLDER={head:'head',body_front:'body',body_back:'body',arm_l:'arm',arm_r:'arm',hand_l:'hand',hand_r:'hand',hips:'hip',leg_l:'leg',leg_r:'leg'};
-const TEX_PART={head:'',body_front:'front',body_back:'back',arm_l:'left',arm_r:'right',hand_l:'left',hand_r:'right',hips:'',leg_l:'left',leg_r:'right'};
+const TEX_PART={head:'',body_front:'front',body_back:'back',arm_l:'left',arm_r:'rigt',hand_l:'left',hand_r:'rigt',hips:'',leg_l:'left',leg_r:'rigt'};   // 'rigt' has the length of 'left', so the two names can be swapped by hand in a file
 const KIND_TAG={color:'diff',normal:'nrm',brdf:'brdf'};
 const FACTIONS=[['','Same as the base character'],['0','Jedi'],['1','Sith'],['2','Hero'],['3','Bounty Hunter'],['4','Astromech Droid'],['5','Protocol Droid'],['6','Scoundrel'],['7','Villain'],['8','Scavenger'],['9','Civilian']];
 let CH=null;

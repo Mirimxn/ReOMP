@@ -274,6 +274,10 @@ function apply(d0,plan,ctx){
   const modelSwaps=[];
   for(const pc of plan.parts||[]){const r=C.renders.find(a=>a.key==pc.entity);if(!r){log.push('no '+pc.entity+' in '+C.file);continue;}
     const ent=r.entity?entityOf(C.O,r.entity):null;
+    // in the roster preview scene a switched-off entity keeps the preview loading for ever: keep it, but make it see-through and move it out of view
+    if(pc.enabled===false&&C.isScene){for(const ov of r.overrides)if(ov.alphaEn!=null){d[ov.alphaEn]=1;v.setFloat32(ov.alpha,0,true);}
+      if(r.transform){const p=r.transform.pos;v.setFloat32(p+4*9,r.transform.local[1]-50,true);v.setFloat32(p+4*21,r.transform.world[1]-50,true);}
+      log.push(r.key+' hidden in the preview');continue;}
     if(pc.enabled===false&&!ent){if(d[r.obj.o+17]<=1)d[r.obj.o+17]=0;continue;}
     if(pc.enabled===false){for(const x of C.O){const inside=x===ent||x.path==r.entity||x.path.startsWith(r.entity+'/');
         if(inside&&(x.class=='apiEntity'||C.D.isComp(x.ci))&&(d[x.o+17]===0||d[x.o+17]===1))d[x.o+17]=0;}continue;}

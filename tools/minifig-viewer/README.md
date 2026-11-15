@@ -53,3 +53,11 @@ The character panel can add other characters (from the game folder or a `.prefab
 - **Item looks:** for an `Items/<name>` entity, its render objects are paired in order with the donor item's and their handles (model, textures) swapped field by field. How the item is used stays the base's.
 
 Swapped handles are copied byte for byte from the donor (same resource ids), and the donor's load-list records for every new path (and its `_nxg` twin) are added. Nothing is added or removed from the object tree, since the game ignores added entities.
+
+## Left and right
+
+The game's character left is +x: `LEFT_ARM_DX11` and `LEFT_LEG_DX11` sit at x > 0 in `super_minifig_dx11.ghg`, and body material 5 (left arm), 7 (left hand, the bare one on Anakin) and 9 (left leg) are the +x pieces. The viewer assigns body pieces by that rule. Exported right-side textures are named `..._RIGT_DIFF` so a left and a right name have the same length and can be swapped by hand in a baked file.
+
+## Preview scenes
+
+A part switched off in the `_cheapminifig.scene_baked` (entity flags 0) kept the roster preview loading for ever. Export now keeps it on in the scene and hides it instead: alpha tint on (0) for each of its material overrides, and its transform moved 50 units down.
