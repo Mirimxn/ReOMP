@@ -176,7 +176,7 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
         <label for="expId">Character ID</label><input type="text" id="expId" placeholder="e.g. AIRBORNE" autocomplete="off" spellcheck="false">
         <label for="expMod">Mod folder</label><input type="text" id="expMod" placeholder="e.g. airborne-trooper" autocomplete="off" spellcheck="false">
         <label>Icon</label><div style="display:flex;gap:8px;align-items:center;min-width:0"><button class="btn icon" id="expIconBtn">Choose…</button><span class="tex" id="expIconName">none</span></div>
-        <label for="expPreview">Preview slot</label><input type="text" id="expPreview" value="TC14" autocomplete="off" spellcheck="false" title="Hidden roster entry whose preview slot the new character borrows (used only with a preview scene)">
+        <label for="expPreview">Preview slot</label><input type="text" id="expPreview" value="" placeholder="e.g. C3PO_RedEyes" autocomplete="off" spellcheck="false" title="Roster entry whose preview slot the new character borrows. Write the name exactly as in the game (upper and lower case matter) and use a different one for every custom character: see omp-data/character-previews/preview-bases.txt">
         <div class="full" id="issueBox" hidden><p class="hint" style="margin:0 0 4px;color:var(--warn,#b45309)"><b>Won't carry into the game:</b></p><ul class="issues" id="issues"></ul></div>
         <p class="hint full">Internal file name <span class="tex" id="internalName"></span> keeps the base's length. The ZIP holds one mod folder for the Mod Manager, with the prefab, your new textures and models, and mod.json (needs v1).</p>
         <div class="full"><button class="btn primary" id="exportBtn">Export mod ZIP</button></div>

@@ -560,6 +560,8 @@ function gameIssues(){if(!CH)return [];const out=[];const C=CH.C;const all=[...(
   if(!C.neck&&headMode=='up')out.push(C.baseName+' has no neck lift, so the head stays at normal height.');
   if($('swapLR').checked)out.push('Swapping left and right textures changes this view only.');
   out.push(...copyIssues());
+  if(CH&&CH.C.roster&&/^OMP_/i.test(CH.C.roster.name))out.push(CH.C.baseName+' is itself a custom character ('+CH.C.roster.name+'), which the game cannot copy a roster entry from: the export uses '+templateOf(CH.C)+' instead. Check that this is the game character it was made from.');
+  {const pb=$('expPreview').value.trim();if(pb&&pb!==pb.replace(/[^A-Za-z0-9_]/g,''))out.push('The preview base may only use letters, digits and _.');}
   return out;}
 let issueKey='';
 function renderIssues(){const l=gameIssues();const k=l.join('\n');if(k===issueKey)return;issueKey=k;$('issueBox').hidden=!l.length;const ul=$('issues');ul.textContent='';
@@ -586,6 +588,8 @@ async function buildTexture(m,gamePath){const f=m.src,n=f.name.toLowerCase();con
   const px=g.getImageData(0,0,W,H).data;const e=PF.encodeBC7(px,W,H);
   return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath);}
 const b64u=(s)=>new Uint8Array(b64(s));
+// the roster row to copy: a custom character (OMP_…) is not in the game's table when rows are copied, so use the game character its files sit with
+function templateOf(C){const r=C.roster?C.roster.name:C.baseName;if(!/^OMP_/i.test(r))return r;const dir=C.selfPath.split('/').slice(-2,-1)[0];return dir||r;}
 async function exportMod(){if(!CH)return;const C=CH.C;
   const name=$('expName').value.trim(),id=$('expId').value.trim().toUpperCase(),mod=$('expMod').value.trim(),desc=$('expDesc').value.trim();
   const replace=$('expMode').value=='replace';
@@ -654,7 +658,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     say('Exported '+mod+'.zip: it replaces '+C.baseName+' in the game. Turn off other mods that change '+C.baseName+"'s files.");return;}
   let icon=null;if(iconFile){const bmp=await createImageBitmap(iconFile);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
     const blob=await new Promise(r=>c.toBlob(r,'image/png'));files.push(['icon.png',new Uint8Array(await blob.arrayBuffer())]);icon='icon.png';}
-  const payload={id,tableName:'Characters',templateMatch:C.roster?C.roster.name:C.baseName,prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};
+  const payload={id,tableName:'Characters',templateMatch:templateOf(C),prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};
   if(icon)payload.icon=icon;
   if(sceneRel){payload.previewScene=sceneRel;const pb=$('expPreview').value.trim();if(pb)payload.previewBase=pb;}
   const fac=$('expFaction').value;if(fac!=='')payload.columnOverrides={CharacterClass:fac};
