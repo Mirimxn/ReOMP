@@ -309,7 +309,7 @@ function apply(d0,plan,ctx){
   for(const suf of ['.prefab\0','_character.prefab\0','_cheapminifig.scene\0']){const pat=enc('/'+B+suf);
     for(const o of findAll(lower,pat))d.set(enc('/'+N),o);}
   const srcName=enc('/'+N+(C.isScene?'_cheapminifig.scene\0':'.prefab\0'));const so=find(d,srcName);
-  if(so>0){const oid=d.slice(so+srcName.length,so+srcName.length+16);const rid=rand16();for(const o of findAll(d,oid))d.set(rid,o);}
+  if(so>0&&!plan.keepId){const oid=d.slice(so+srcName.length,so+srcName.length+16);const rid=rand16();for(const o of findAll(d,oid))d.set(rid,o);}
   if(C.roster&&plan.rosterRow){const b=enc(plan.rosterRow+'\0');d.fill(0,C.roster.pos+11,C.roster.pos+27);edits.push([C.roster.lenPos,4+v.getUint32(C.roster.lenPos,true),cat([u32le(b.length),b])]);}
   // size-changing edits, highest position first, growing every enclosing object and the object list
   edits.sort((a,b)=>b[0]-a[0]);
@@ -327,7 +327,7 @@ function apply(d0,plan,ctx){
   // self path and id
   {const n=ov.getUint16(20,false);const sp=C.selfPath;const nsp=sp.slice(0,sp.length-C.file.length)+C.file.replace(new RegExp('^'+C.baseName,'i'),plan.internalName);
     const b=enc(nsp+'\0');const hdr=ov.getUint32(0,false);
-    out=cat([out.slice(0,20),new Uint8Array([b.length>>8,b.length&255]),b,rand16(),out.slice(22+n+16)]);dv(out).setUint32(0,hdr+b.length-n,false);
+    out=cat([out.slice(0,20),new Uint8Array([b.length>>8,b.length&255]),b,plan.keepId?out.slice(22+n,22+n+16):rand16(),out.slice(22+n+16)]);dv(out).setUint32(0,hdr+b.length-n,false);
     C.newSelfPath=nsp;}
   // header load list: new textures, swapped models
   const H=Deps(out);const paths=[];for(let k=0;k<H.nrec;k++)paths.push(H.path(H.recNode(k)));

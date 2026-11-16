@@ -587,12 +587,13 @@ async function buildTexture(m,gamePath){const f=m.src,n=f.name.toLowerCase();con
 const b64u=(s)=>new Uint8Array(b64(s));
 async function exportMod(){if(!CH)return;const C=CH.C;
   const name=$('expName').value.trim(),id=$('expId').value.trim().toUpperCase(),mod=$('expMod').value.trim(),desc=$('expDesc').value.trim();
-  if(!name)return say('Give the character a name first.',true);
-  if(!/^[A-Z0-9_]{2,24}$/.test(id))return say('The character ID needs 2–24 letters, digits or _.',true);
+  const replace=$('expMode').value=='replace';
+  if(!replace&&!name)return say('Give the character a name first.',true);
+  if(!replace&&!/^[A-Z0-9_]{2,24}$/.test(id))return say('The character ID needs 2–24 letters, digits or _.',true);
   if(!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(mod))return say('The mod folder name may use lower-case letters, digits, - and _.',true);
   const btnE=$('exportBtn');btnE.disabled=true;
   try{
-  const pname=internalName(id,C.baseName);const files=[],resources=[],texList=[],alone=[];const cache=new Map();
+  const pname=replace?C.baseName:internalName(id,C.baseName);const files=[],resources=[],texList=[],alone=[];const cache=new Map();
   const tick=()=>new Promise(r=>setTimeout(r,0));
   async function texFor(m,folder,stem,ref){
     if(m.src){const key=m.src.name+'|'+m.src.size+'|'+m.flip;if(cache.has(key))return cache.get(key);
@@ -603,7 +604,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     if(m.game&&(!ref||m.game.path!=ref.path))return m.game;
     if(m.cleared)return null;
     return undefined;}   // unchanged
-  const P=pname.toLowerCase();const plan={internalName:pname,rosterRow:'OMP_'+id,body:{},parts:[],donors:donorPlan()};
+  const P=pname.toLowerCase();const plan={internalName:pname,rosterRow:replace?null:'OMP_'+id,keepId:replace,body:{},parts:[],donors:donorPlan()};
   if(C.neck&&headMode!='hidden'&&headMode!=CH.origHead)plan.neckLift=headMode=='up'?HEAD_UP:0;
   for(const [sid] of SLOT_INFO){const s=slots[sid].surface,ch={};
     if(s.color.toLowerCase()!=(s.origColor||'').toLowerCase())ch.tint=linOf(s.color);
@@ -637,9 +638,19 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     plan.parts.push(pc);}
   say('Writing the prefab…');await tick();
   const pre=PF.apply(CH.bytes,plan,{textures:texList});const dir=pre.selfPath.slice(0,pre.selfPath.lastIndexOf('/')+1).toUpperCase();
-  const prefabRel=dir+pname.toUpperCase()+'.PREFAB_BAKED';files.unshift([prefabRel,pre.data]);resources.unshift(prefabRel);
+  const prefabRel=dir+pname.toUpperCase()+'.PREFAB_BAKED';files.unshift([prefabRel,pre.data]);
+  if(!replace)resources.unshift(prefabRel);
   let sceneRel=null;
-  if(CH.scene){const sc=PF.apply(CH.scene.bytes,plan,{textures:texList});sceneRel=dir+pname.toUpperCase()+'_CHEAPMINIFIG.SCENE_BAKED';files.push([sceneRel,sc.data]);}
+  let scenePath=null;
+  if(CH.scene){const sc=PF.apply(CH.scene.bytes,plan,{textures:texList});sceneRel=dir+pname.toUpperCase()+'_CHEAPMINIFIG.SCENE_BAKED';scenePath=sc.selfPath;files.push([sceneRel,sc.data]);}
+  if(replace){   // the game's own files at their own paths: the roster row and preview stay the base's
+    const manifest={name:name||C.baseName,description:desc||('Replaces '+C.baseName),dependencies:[{id:'v1'}],
+      actions:[{typeId:'v1/register-custom-resource-action',payload:{path:pre.selfPath,srcPath:prefabRel}},
+        ...(sceneRel?[{typeId:'v1/register-custom-resource-action',payload:{path:scenePath,srcPath:sceneRel}}]:[]),
+        ...resources.map(r=>({typeId:'v1/register-custom-resource-action',payload:{path:r,srcPath:r}}))]};
+    files.unshift(['mod.json',PF.enc(JSON.stringify(manifest,null,1))]);
+    await saveFile(mod+'.zip',PF.zip(files.map(([n,d])=>[mod+'/'+n,d])));
+    say('Exported '+mod+'.zip: it replaces '+C.baseName+' in the game. Turn off other mods that change '+C.baseName+"'s files.");return;}
   let icon=null;if(iconFile){const bmp=await createImageBitmap(iconFile);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
     const blob=await new Promise(r=>c.toBlob(r,'image/png'));files.push(['icon.png',new Uint8Array(await blob.arrayBuffer())]);icon='icon.png';}
   const payload={id,tableName:'Characters',templateMatch:C.roster?C.roster.name:C.baseName,prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};
@@ -657,6 +668,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   catch(e){say('Export failed: '+e.message,true);console.error(e);}
   finally{btnE.disabled=false;}}
 $('exportBtn').onclick=exportMod;
+$('expMode').onchange=()=>{const r=$('expMode').value=='replace';$('expModeNote').hidden=!r;for(const i of ['expFaction','expId','expIconBtn','expPreview'])if($(i))$(i).disabled=r;};
 async function saveFile(filename,data){
   const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
   if(dl){try{await dl.save({filename,data:new Blob([data])});return;}catch(e){if(e&&e.code=='declined')throw new Error('saving was cancelled');if(e&&e.code&&!['unavailable','not_granted','capability_disabled','capability_removed'].includes(e.code))throw new Error(e.message||e.code);}}

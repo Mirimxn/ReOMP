@@ -61,3 +61,7 @@ The game's character left is +x: `LEFT_ARM_DX11` and `LEFT_LEG_DX11` sit at x > 
 ## Preview scenes
 
 A part switched off in the `_cheapminifig.scene_baked` (entity flags 0) kept the roster preview loading for ever. Export now keeps it on in the scene and hides it instead: alpha tint on (0) for each of its material overrides, and its transform moved 50 units down.
+
+## Replacing a game character
+
+"Export as: A replacement for the base" keeps the base's own name, file paths, self resource id and roster link, and the mod.json registers the edited prefab and preview scene at the base's own paths (plus new textures and models) with no custom character action. The roster slot, name and preview stay the game's.
