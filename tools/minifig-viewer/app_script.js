@@ -390,8 +390,9 @@ const FACTIONS=[['','Same as the base character'],['0','Jedi'],['1','Sith'],['2'
 let CH=null;
 const extraFiles=new Map();   // .pc_shaders / .nxg_textures that go with a replacement model
 const keyOf=(n)=>n.toLowerCase().split('/').pop().replace(/\.[a-z0-9_]+$/,'').replace(/_dx11$/,'');
-const hexOf=(rgb)=>'#'+rgb.map(c=>PF.srgb(c).toString(16).padStart(2,'0')).join('');
-const linOf=(hex)=>hexRGB(hex).map(c=>PF.lin(c*255));
+// part colours: the game shows colour_tint as it is stored (Gree's 0.07 hands are black, not the grey a linear-to-sRGB step gives)
+const hexOf=(rgb)=>'#'+rgb.map(c=>Math.max(0,Math.min(255,Math.round(c*255))).toString(16).padStart(2,'0')).join('');
+const linOf=(hex)=>hexRGB(hex);
 const baseFile=(p)=>p.split('/').pop();
 function refsOf(C,r,ids){const out={};
   for(const ov of r.overrides){if(ids&&!ids.includes(ov.id))continue;
