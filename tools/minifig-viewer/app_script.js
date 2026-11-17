@@ -537,6 +537,23 @@ function renderCharacter(){const sec=$('charSec'),ex=$('exportSec');sec.hidden=e
   renderSlots();renderCopy();issueKey='';renderIssues();
   if(!$('expId').value)$('internalName').textContent='';else $('internalName').textContent=internalName($('expId').value,C.baseName);}
 
+// a custom model goes in under a name of its own: its file, its header and the shader and texture-list files it names all agree,
+// it gets its own resource id (which the prefab then uses), and it cannot replace a game model or another mod's
+function sameLen(s,L,salt){s=s.toLowerCase().replace(/[^a-z0-9_]/g,'');const h=PF.crc32(PF.enc(salt)).toString(36).padStart(7,'0');while(s.length<L)s+=h;return s.slice(0,L);}
+async function packModel(p,P,tag){const B=p.newModel.bytes,sp=p.newModel.selfPath;const ext=sp.split('.').pop().toUpperCase();
+  const dir=sp.slice(0,sp.lastIndexOf('/')+1).toUpperCase();const fileStem=p.newModel.name.replace(/\.[^.]+$/,'').toLowerCase();
+  const ref=(PF.modelStem(B)||sp.split('/').pop().replace(/_dx11\.[^.]+$/i,'')).toLowerCase();
+  let U=sameLen(ref.split('_')[0]+'_'+P+(tag||''),ref.length,P+'|'+ref+'|'+tag);if(U===ref)U=U.slice(0,-1)+(U.endsWith('z')?'y':'z');
+  const id=new Uint8Array(16);crypto.getRandomValues(id);
+  const files=[[dir+U.toUpperCase()+'_DX11.'+ext,PF.retargetHeader(PF.renameInHeader(B,ref,U),dir+U.toUpperCase()+'_DX11.'+ext,id)]];const missing=[];
+  for(const e2 of ['pc_shaders','nxg_textures']){let src=null;
+    for(const k of [fileStem+'.'+e2,ref+'_dx11.'+e2])if(!src&&extraFiles.has(k))src=extraFiles.get(k).data;
+    // not dropped: the files of the game model it was made from, then those of the model it replaces
+    for(const g of [dir.toLowerCase()+ref+'_dx11.'+e2,p.origModel.replace(/\.[^./]+$/,'.'+e2)]){if(src)break;const e=findGame(g);if(e){try{src=await readGame(e);}catch(err){}}}
+    if(!src){missing.push(e2);continue;}
+    const sref=(PF.selfPath(src).split('/').pop().replace(/_dx11\.[^.]+$/i,'')).toLowerCase();let c=src;if(sref.length===ref.length&&sref===ref)c=PF.renameInHeader(c,ref,U);
+    files.push([dir+U.toUpperCase()+'_DX11.'+e2.toUpperCase(),PF.retargetHeader(c,dir+U.toUpperCase()+'_DX11.'+e2)]);}
+  return {path:(dir+U+'_dx11.'+ext).toLowerCase(),id,files,missing};}
 function internalName(id,base){const L=base.length;const s=id.replace(/[^A-Za-z0-9]/g,'');const h=PF.crc32(PF.enc(id.toUpperCase())).toString(36).toUpperCase().padStart(7,'0');
   let n=s.length>L?s.slice(0,Math.max(1,L-3))+h:s+h+h+h;return n.slice(0,L);}
 const slug=(s)=>s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,48);
@@ -629,14 +646,12 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     const folder=(p.newModel?p.newModel.path:p.origModel).split('/').slice(-2,-1)[0]||'additionalmodel';
     const same=parts.filter(q=>q.entity&&((q.newModel?q.newModel.path:q.origModel).split('/').slice(-2,-1)[0]||'additionalmodel')==folder);
     const tag=same.length>1?String(same.indexOf(p)+1):'';
-    if(p.newModel){pc.model={path:p.newModel.path};pc.special=p.special||'[All Specials]';pc.tex={};
+    if(p.newModel){pc.model={path:p.newModel.path};
+      if(!p.newModel.orig){const pk=await packModel(p,P,tag);pc.model={path:pk.path,id:pk.id};files.push(...pk.files);resources.push(...pk.files.map(f=>f[0]));if(pk.missing.length)alone.push(p.newModel.name+' ('+pk.missing.join(', ')+')');}pc.special=p.special||'[All Specials]';pc.tex={};
       const cf=(s.refs&&s.refs.color)?s.refs.color.field:'diffuse_1';
       for(const k of ['color','normal','brdf']){const m=s.maps[k];let t=await texFor(m,folder,[folder,P,tag,KIND_TAG[k]].filter(Boolean).join('_'),null);if(t===undefined)t=null;
         if(k=='color'){pc.tex.diffuse_0=cf=='diffuse_0'?t:null;pc.tex.diffuse_1=cf=='diffuse_1'?t:null;}else pc.tex[k=='normal'?'normal_0':'specular_0']=t;}
-      if(!p.newModel.orig){const sp=p.newModel.selfPath;files.push([sp,p.newModel.bytes]);resources.push(sp);
-        const stem=p.newModel.name.replace(/\.[^.]+$/,'').toLowerCase();
-        let found=0;for(const ext of ['pc_shaders','nxg_textures']){const x=extraFiles.get(stem+'.'+ext);if(x){found++;const rel=sp.replace(/\.[^./]+$/,'.'+ext.toUpperCase());files.push([rel,x.data]);resources.push(rel);}}
-        if(found<2)alone.push(p.newModel.name);}}
+}
     else if(p.mats&&p.mats[0].id!=null){pc.mats=[];   // one entry per material override
       for(const m of p.mats){const ms=m.surface,e={id:m.id};
         for(const k of ['color','normal','brdf']){const ref=ms.refs&&ms.refs[k];const field=k=='color'?(ref?ref.field:'diffuse_1'):k=='normal'?'normal_0':'specular_0';
@@ -690,7 +705,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   const kept=parts.filter(p=>!p.entity).length;
   await saveFile(mod+'.zip',zipped);
   say('Exported '+mod+'.zip: '+(files.length-1)+' files.'+(kept?' View-only parts were left out.':'')+
-    (alone.length?' '+alone.join(', ')+' went without its .pc_shaders and .nxg_textures: fine for a game model, otherwise drop them and export again.':''));}
+    (alone.length?' No shader or texture-list file was found for '+alone.join(', ')+': drop them next to the model and export again, or the game will not show it.':''));}
   catch(e){say('Export failed: '+e.message,true);console.error(e);}
   finally{btnE.disabled=false;}}
 $('exportBtn').onclick=exportMod;

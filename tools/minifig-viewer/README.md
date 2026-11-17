@@ -69,3 +69,7 @@ A part switched off in the `_cheapminifig.scene_baked` (entity flags 0) kept the
 ## Updating a mod in place
 
 "Export as: An update to its own mod" works for a character opened from `mods/<id>/` in the connected game folder. It keeps the prefab's name, self id and roster link, writes the prefab and preview scene back at their paths in that mod (spelled as its mod.json spells them), and puts changed textures at their usual paths. A texture that replaces one the mod already has keeps that file's resource id, so other characters in the mod that use it still match. Files that are new to the mod get a `v1/register-custom-resource-action` appended to the mod's own mod.json; everything else in it is kept. The ZIP holds `<id>/` with only those files, to unzip over the mod.
+
+## Custom models
+
+A `.gsc`/`.ghg` names its own path in its header and, in its header's name list, the shader and texture-list files it needs (`<stem>.shaders`, `<stem>_dx11.nxg_textures`); the `.pc_shaders` and `.nxg_textures` files carry their own paths too. The prefab's handle and load-list record for the model carry the model's resource id (record offset 28). On export a custom model is given a new name of the same length as `<stem>` (the name list keeps its offsets), and all three files are renamed to it, so it cannot replace a game model or another mod's. It gets a new resource id, and the prefab handle and record use that id. Missing companions come from the dropped files, then the game model named in its header, then the model it replaces.

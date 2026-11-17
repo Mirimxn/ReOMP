@@ -192,6 +192,15 @@ function retargetTexture(tex,gamePath,keepId){   // gamePath like Chars/Super_Ch
   dv(out).setUint32(0,hdr+sp.length-n,false);
   const c=dv(out).getUint32(0,false)+4;const r=find(out,'RTXT',c);if(r<0)throw new Error('not a game texture (no RTXT block)');
   out.set(rand16(),r+46);return {data:out,id:tid};}
+// a resource's own path in its header (u16 length at 20, then the path and its 16-byte id); the header length at 0 follows
+function retargetHeader(b,newPath,newId){const v=dv(b);const n=v.getUint16(20,false);const hdr=v.getUint32(0,false);const sp=enc(newPath+'\0');
+  const out=cat([b.slice(0,20),new Uint8Array([sp.length>>8,sp.length&255]),sp,newId||b.slice(22+n,22+n+16),b.slice(22+n+16)]);dv(out).setUint32(0,hdr+sp.length-n,false);return out;}
+const headerId=(b)=>{const n=dv(b).getUint16(20,false);return b.slice(22+n,22+n+16);};
+// the name a model gives its shader and texture-list files ("hat_x.shaders", "hat_x_dx11.nxg_textures" in its header)
+function modelStem(b){const h=dv(b).getUint32(0,false)+4;const t=latin(b,0,Math.min(h,b.length));const m=/([a-z0-9_]+)\.shaders\0/i.exec(t);return m?m[1]:null;}
+// swap every spelling of one name for another of the same length inside a header (names only, so sizes stay)
+function renameInHeader(b,from,to){if(from.length!==to.length)throw new Error('names must keep their length');const out=b.slice();const h=Math.min(dv(b).getUint32(0,false)+4,b.length);
+  for(const [f,t] of [[from.toLowerCase(),to.toLowerCase()],[from.toUpperCase(),to.toUpperCase()]])for(const p of findAll(out.subarray(0,h),enc(f)))out.set(enc(t),p);return out;}
 function wrapBC7(template,w,h,mips,pix){   // template: a game BC7 texture header (everything before the pixel data)
   const t=template;const c1=dv(t).getUint32(0,false)+4;const rt=find(t,'RTXT',c1);
   const out=cat([t,pix]);const ov=dv(out);ov.setUint32(rt+8,w,false);ov.setUint32(rt+12,h,false);ov.setUint32(rt+20,mips,false);
@@ -283,8 +292,8 @@ function apply(d0,plan,ctx){
         if(inside&&(x.class=='apiEntity'||C.D.isComp(x.ci))&&(d[x.o+17]===0||d[x.o+17]===1))d[x.o+17]=0;}continue;}
     if(pc.model){const old=r.model.path;const rg=ent||r.obj;
       for(const p of findAll(d0,enc(old+'\0'),rg.o,rg.end)){const st=p-4-16-1-4;if(d0[st]==2&&d0[st+1]==0&&d0[st+4]==1&&v.getUint32(p-4,true)>=old.length+1)
-        edits.push([st,handleLen(d0,st),handleBytes(pc.model.path,d0.slice(st+5,st+21))]);}
-      modelSwaps.push([old,pc.model.path]);}
+        edits.push([st,handleLen(d0,st),handleBytes(pc.model.path,pc.model.id||d0.slice(st+5,st+21))]);}
+      modelSwaps.push([old,pc.model.path,pc.model.id]);}
     if(pc.special!=null&&r.special){const b=enc(pc.special+'\0');edits.push([r.special.pos,r.special.len,cat([u32le(b.length),b])]);}
     // material 0 is the model's unused default when the model has more: write the real materials
     const real=r.overrides.filter(o=>o.id>=1);
@@ -334,8 +343,8 @@ function apply(d0,plan,ctx){
   const entries=[];
   for(const t of ctx.textures){if(!paths.includes(t.path)){const r=new Uint8Array(64);const rv=dv(r);[36,0,0,0xffffffff,0,0,0xffffffff].forEach((x,i)=>rv.setUint32(4*i,x,false));r.set(t.id,28);rv.setUint32(44,2,false);entries.push([t.path,r]);}}
   const dropOld=new Set();
-  for(const [oldp,newp] of modelSwaps){for(const [a,b] of [[oldp,newp],[oldp.replace(/_dx11\./,'_nxg.'),newp.replace(/_dx11\./,'_nxg.')]]){
-      const k=paths.indexOf(a);if(k<0||paths.includes(b))continue;entries.push([b,H.recs[k]]);
+  for(const [oldp,newp,nid] of modelSwaps){for(const [a,b] of [[oldp,newp],[oldp.replace(/_dx11\./,'_nxg.'),newp.replace(/_dx11\./,'_nxg.')]]){
+      const k=paths.indexOf(a);if(k<0||paths.includes(b))continue;let rec=H.recs[k];if(nid&&b===newp){rec=rec.slice();rec.set(nid,28);}entries.push([b,rec]);
       if(find(out,enc(oldp+'\0'),ov.getUint32(0,false)+4)<0)dropOld.add(a);}}
   {const known=new Set(paths.map(p=>p.toLowerCase()).concat(entries.map(e=>e[0].toLowerCase())));const cache=new Map();
     for(const [p,U] of donorPaths){if(!cache.has(U)){const DU=Deps(U.d);const m=new Map();for(let k=0;k<DU.nrec;k++){const q=DU.path(DU.recNode(k)).toLowerCase();if(!m.has(q))m.set(q,[]);m.get(q).push(DU.recs[k]);}cache.set(U,m);}
@@ -365,6 +374,6 @@ function zip(files){const local=[],central=[];let off=0;
 function specialNames(m){const out=[];for(let i=0;i<m.length-2;i++){if(m[i]===36&&(i==0||m[i-1]===0)){let e=i+1;while(e<m.length&&e-i<64&&((m[e]>=48&&m[e]<=57)||(m[e]>=65&&m[e]<=90)||(m[e]>=97&&m[e]<=122)||m[e]===95))e++;
   if(m[e]===0&&e-i>3){const s=latin(m,i+1,e);if(!out.includes(s))out.push(s);}}}return out;}
 
-return {Schema,objtable,Dec,Deps,readCharacter,apply,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
+return {Schema,objtable,Dec,Deps,readCharacter,apply,retargetHeader,headerId,modelStem,renameInHeader,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
 })();
 if(typeof module!='undefined')module.exports=PF;
