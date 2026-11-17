@@ -408,9 +408,9 @@ function loadCharacter(name,bytes){
   if(C.isScene){
     if(!CH)throw new Error('load the character .prefab_baked first, then its preview scene');
     if(C.baseName.toLowerCase()!=CH.C.baseName.toLowerCase())throw new Error('this preview scene is for '+C.baseName+', not '+CH.C.baseName);
-    CH.scene={name,bytes,C};renderCharacter();say('Preview scene added: the roster will show the new look.');return;}
+    CH.scene={name,bytes,C,src:GAME.srcOf.get(name.toUpperCase())||null};renderCharacter();say('Preview scene added: the roster will show the new look.');return;}
   resetAll();
-  CH={name,bytes,C,donors:[],copy:{anim:-1,sounds:-1,items:{}},items:PF.itemsOf(C),droidTop:hat?hat[1].toUpperCase():null,scene:null,refIndex:new Map(),hidden:new Set(),bodyModel:null,
+  CH={name,bytes,C,src:GAME.srcOf.get(name.toUpperCase())||null,donors:[],copy:{anim:-1,sounds:-1,items:{}},items:PF.itemsOf(C),droidTop:hat?hat[1].toUpperCase():null,scene:null,refIndex:new Map(),hidden:new Set(),bodyModel:null,
     bodyModelPath:C.body&&!/super_minifig_dx11/i.test(C.body.model.path)?C.body.model.path:null};
   const index=(refs)=>{for(const r of Object.values(refs))CH.refIndex.set(keyOf(r.path),r);};
   if(C.body)for(const [id] of SLOT_INFO){const s=slots[id].surface;const ids=PF.BODY_IDS[id];
@@ -577,25 +577,29 @@ $('charFiles').onclick=async()=>{if(!CH)return;const files=[[CH.C.selfPath,CH.by
   await saveFile(CH.C.baseName+'-files.zip',PF.zip(files));say('Saved '+files.length+' files'+(missing?' ('+missing+' not found in the game folder)':'')+'.');};
 // ---------- export
 const potX=(v)=>{let p=4;while(p<v&&p<2048)p*=2;return p;};
-async function buildTexture(m,gamePath){const f=m.src,n=f.name.toLowerCase();const buf=new Uint8Array(await f.arrayBuffer());
-  if(n.endsWith('.texture')&&!m.flip)return PF.retargetTexture(buf,gamePath);
+async function buildTexture(m,gamePath,keepId){const f=m.src,n=f.name.toLowerCase();const buf=new Uint8Array(await f.arrayBuffer());
+  if(n.endsWith('.texture')&&!m.flip)return PF.retargetTexture(buf,gamePath,keepId);
   const v=new DataView(buf.buffer);
   if(n.endsWith('.dds')&&!m.flip&&buf.length>148&&String.fromCharCode(...buf.slice(84,88))=='DX10'&&v.getUint32(128,true)==98){
     const h=v.getUint32(12,true),w=v.getUint32(16,true),mips=Math.max(1,v.getUint32(28,true));
-    if(PF.bc7size(w,h,mips)==buf.length-148)return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),w,h,mips,buf.slice(148)),gamePath);}
+    if(PF.bc7size(w,h,mips)==buf.length-148)return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),w,h,mips,buf.slice(148)),gamePath,keepId);}
   const img=m.img;const W=potX(img.width),H=potX(img.height);const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
   if(m.flip){g.translate(0,H);g.scale(1,-1);}g.drawImage(img,0,0,W,H);
   const px=g.getImageData(0,0,W,H).data;const e=PF.encodeBC7(px,W,H);
-  return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath);}
+  return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath,keepId);}
 const b64u=(s)=>new Uint8Array(b64(s));
+// where a game-folder file came from: mods/<id>/<rel>, or null for the game's own archives
+function modOf(e){const m=e&&/^mods\/([^/]+)\/(.+)$/.exec(e.path);return m?{id:m[1],rel:m[2]}:null;}
 // the roster row to copy: a custom character (OMP_…) is not in the game's table when rows are copied, so use the game character its files sit with
 function templateOf(C){const r=C.roster?C.roster.name:C.baseName;if(!/^OMP_/i.test(r))return r;const dir=C.selfPath.split('/').slice(-2,-1)[0];return dir||r;}
 async function exportMod(){if(!CH)return;const C=CH.C;
   const name=$('expName').value.trim(),id=$('expId').value.trim().toUpperCase(),mod=$('expMod').value.trim(),desc=$('expDesc').value.trim();
-  const replace=$('expMode').value=='replace';
+  const mode=$('expMode').value,update=mode=='update',replace=mode=='replace'||update;
+  const src=update?modOf(CH.src):null;
+  if(update&&!src)return say('Updating a mod works for a character loaded from a mod in the connected game folder (find it with the game file search). '+CH.C.baseName+' was not.',true);
   if(!replace&&!name)return say('Give the character a name first.',true);
   if(!replace&&!/^[A-Z0-9_]{2,24}$/.test(id))return say('The character ID needs 2–24 letters, digits or _.',true);
-  if(!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(mod))return say('The mod folder name may use lower-case letters, digits, - and _.',true);
+  if(!update&&!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(mod))return say('The mod folder name may use lower-case letters, digits, - and _.',true);
   const btnE=$('exportBtn');btnE.disabled=true;
   try{
   const pname=replace?C.baseName:internalName(id,C.baseName);const files=[],resources=[],texList=[],alone=[];const cache=new Map();
@@ -604,7 +608,10 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     if(m.src){const key=m.src.name+'|'+m.src.size+'|'+m.flip;if(cache.has(key))return cache.get(key);
       say('Encoding '+m.src.name+'…');await tick();
       const gp=`Chars/Super_Character_Texture/${folder.toUpperCase()}/${stem.toUpperCase()}_DX11.texture`;
-      const t=await buildTexture(m,gp);const rel=`CHARS/SUPER_CHARACTER_TEXTURE/${folder.toUpperCase()}/${stem.toUpperCase()}_DX11.texture`;
+      const rel=`CHARS/SUPER_CHARACTER_TEXTURE/${folder.toUpperCase()}/${stem.toUpperCase()}_DX11.texture`;
+      // updating a mod: a texture that replaces one of the mod's own keeps its resource id, so the mod's other characters still match it
+      let keep=null;if(src){const old=GAME.entries.get(('mods/'+src.id+'/'+rel).toLowerCase());if(old){const b=await readGame(old);const n=(b[20]<<8)|b[21];keep=b.slice(22+n,22+n+16);}}
+      const t=await buildTexture(m,gp,keep);
       files.push([rel,t.data]);resources.push(rel);const r={path:`chars/super_character_texture/${folder}/${stem}.texture`.toLowerCase(),id:t.id};texList.push(r);cache.set(key,r);return r;}
     if(m.game&&(!ref||m.game.path!=ref.path))return m.game;
     if(m.cleared)return null;
@@ -648,6 +655,20 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   let sceneRel=null;
   let scenePath=null;
   if(CH.scene){const sc=PF.apply(CH.scene.bytes,plan,{textures:texList});sceneRel=dir+pname.toUpperCase()+'_CHEAPMINIFIG.SCENE_BAKED';scenePath=sc.selfPath;files.push([sceneRel,sc.data]);}
+  if(update){   // the same files in the same mod: overwrite the prefab and preview, add new files to its mod.json
+    const mjE=GAME.entries.get('mods/'+src.id+'/mod.json');let mj;
+    try{mj=JSON.parse(new TextDecoder().decode(await readGame(mjE)));}catch(e){throw new Error('could not read mods/'+src.id+'/mod.json'+(mjE?': '+e.message:''));}
+    const acts=mj.actions||(mj.actions=[]);
+    const known=(rel)=>{for(const a of acts){const p=a.payload||{};for(const k of ['srcPath','path','previewScene','icon'])if(typeof p[k]=='string'&&p[k].toLowerCase()==rel.toLowerCase())return p[k];}return null;};
+    const caseOf=(rel)=>known(rel)||rel.toUpperCase();
+    const out=[[caseOf(src.rel),pre.data]];
+    if(sceneRel){const ss=modOf(CH.scene.src);out.push([ss?caseOf(ss.rel):sceneRel,files.find(f=>f[0]==sceneRel)[1]]);}
+    const added=[];
+    for(const [n,d] of files){if(n==prefabRel||n==sceneRel||n=='mod.json')continue;const k=known(n);out.push([k||n,d]);
+      if(!k&&resources.includes(n)){acts.push({typeId:'v1/register-custom-resource-action',payload:{path:n,srcPath:n}});added.push(n.split('/').pop());}}
+    out.unshift(['mod.json',PF.enc(JSON.stringify(mj,null,2))]);
+    await saveFile(src.id+'.zip',PF.zip(out.map(([n,d])=>[src.id+'/'+n,d])));
+    say('Exported '+src.id+'.zip with '+(out.length-1)+' files for mods/'+src.id+(added.length?' and '+added.length+' new entries in its mod.json':'')+'. Unzip it into the mods folder over the old one (close the game first).');return;}
   if(replace){   // the game's own files at their own paths: the roster row and preview stay the base's
     const manifest={name:name||C.baseName,description:desc||('Replaces '+C.baseName),dependencies:[{id:'v1'}],
       actions:[{typeId:'v1/register-custom-resource-action',payload:{path:pre.selfPath,srcPath:prefabRel}},
@@ -673,15 +694,18 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   catch(e){say('Export failed: '+e.message,true);console.error(e);}
   finally{btnE.disabled=false;}}
 $('exportBtn').onclick=exportMod;
-$('expMode').onchange=()=>{const r=$('expMode').value=='replace';$('expModeNote').hidden=!r;for(const i of ['expFaction','expId','expIconBtn','expPreview'])if($(i))$(i).disabled=r;};
+const MODE_NOTE={replace:'The mod replaces the base character in the game: same roster slot, name and preview. Faction, character ID, icon and preview base are not used.',
+  update:'Saves the edits into the mod the character came from: the same prefab and preview files, their textures, and its mod.json with any new files added. Unzip it over that mod folder. Name, faction, ID, icon, preview base and mod folder are not used.'};
+$('expMode').onchange=()=>{const m=$('expMode').value;$('expModeNote').hidden=m=='new';$('expModeNote').textContent=MODE_NOTE[m]||'';
+  for(const i of ['expFaction','expId','expIconBtn','expPreview'])if($(i))$(i).disabled=m!='new';$('expName').disabled=m=='update';$('expMod').disabled=m=='update';};
 async function saveFile(filename,data){
   const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
   if(dl){try{await dl.save({filename,data:new Blob([data])});return;}catch(e){if(e&&e.code=='declined')throw new Error('saving was cancelled');if(e&&e.code&&!['unavailable','not_granted','capability_disabled','capability_removed'].includes(e.code))throw new Error(e.message||e.code);}}
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/zip'}));a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}
 
 // ---------- game folder: read textures, models and characters straight from the install (archives and loose files)
-const GAME={name:'',dats:[],entries:new Map(),byName:new Map(),loose:0,handle:null,count:0};
-const WANT=/\.(texture|dds|png|gsc|ghg|prefab_baked|scene_baked|pc_shaders|nxg_textures)$/i;
+const GAME={srcOf:new Map(),name:'',dats:[],entries:new Map(),byName:new Map(),loose:0,handle:null,count:0};
+const WANT=/\.(texture|dds|png|gsc|ghg|prefab_baked|scene_baked|pc_shaders|nxg_textures)$|^mod\.json$/i;
 const SKIP_DIRS=/^(omp|omp-.*|\.git|_?aamods|audio|cut|levels|ui)$/i;   // runtime folders and areas with no character files
 const normPath=(p)=>p.replace(/\\/g,'/').replace(/^\/+/,'').toLowerCase();
 function addEntry(path,e){path=normPath(path);e.path=path;if(!GAME.entries.has(path))GAME.count++;GAME.entries.set(path,e);
@@ -695,7 +719,7 @@ function findGame(ref){ref=normPath(ref);const cands=[ref,ref.replace(/(\.[a-z_]
   for(const c of cands){const l=GAME.byName.get(c.split('/').pop());if(l&&l.length)return l[l.length-1];}
   return null;}
 async function readGame(e){if(e.dat)return DAT.read(e.dat.file,e.f);const f=e.handle?await e.handle.getFile():e.file;return new Uint8Array(await f.arrayBuffer());}
-async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();return new File([await readGame(e)],name);}
+async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();GAME.srcOf.set(name,e);return new File([await readGame(e)],name);}
 
 // remembered folder (only with the folder picker; the fallback file list cannot be kept)
 const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('minifig-viewer',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});

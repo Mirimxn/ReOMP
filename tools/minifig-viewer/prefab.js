@@ -186,8 +186,8 @@ function entityOf(O,full){return O.find(y=>y.class=='apiEntity'&&(y.path?y.path+
 
 // ---------- texture files
 function bc7size(w,h,m){let s=0;for(let i=0;i<m;i++)s+=Math.max(1,Math.ceil(Math.max(1,w>>i)/4))*Math.max(1,Math.ceil(Math.max(1,h>>i)/4))*16;return s;}
-function retargetTexture(tex,gamePath){   // gamePath like Chars/Super_Character_Texture/BODY/BODY_X_DX11.texture
-  const v=dv(tex);const n=v.getUint16(20,false);const hdr=v.getUint32(0,false);const sp=enc(gamePath+'\0');const tid=rand16();
+function retargetTexture(tex,gamePath,keepId){   // gamePath like Chars/Super_Character_Texture/BODY/BODY_X_DX11.texture; keepId: the resource id of the file it replaces
+  const v=dv(tex);const n=v.getUint16(20,false);const hdr=v.getUint32(0,false);const sp=enc(gamePath+'\0');const tid=keepId||rand16();
   const out=cat([tex.slice(0,20),new Uint8Array([sp.length>>8,sp.length&255]),sp,tid,tex.slice(22+n+16)]);
   dv(out).setUint32(0,hdr+sp.length-n,false);
   const c=dv(out).getUint32(0,false)+4;const r=find(out,'RTXT',c);if(r<0)throw new Error('not a game texture (no RTXT block)');

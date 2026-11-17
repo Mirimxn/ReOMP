@@ -65,3 +65,7 @@ A part switched off in the `_cheapminifig.scene_baked` (entity flags 0) kept the
 ## Replacing a game character
 
 "Export as: A replacement for the base" keeps the base's own name, file paths, self resource id and roster link, and the mod.json registers the edited prefab and preview scene at the base's own paths (plus new textures and models) with no custom character action. The roster slot, name and preview stay the game's.
+
+## Updating a mod in place
+
+"Export as: An update to its own mod" works for a character opened from `mods/<id>/` in the connected game folder. It keeps the prefab's name, self id and roster link, writes the prefab and preview scene back at their paths in that mod (spelled as its mod.json spells them), and puts changed textures at their usual paths. A texture that replaces one the mod already has keeps that file's resource id, so other characters in the mod that use it still match. Files that are new to the mod get a `v1/register-custom-resource-action` appended to the mod's own mod.json; everything else in it is kept. The ZIP holds `<id>/` with only those files, to unzip over the mod.
