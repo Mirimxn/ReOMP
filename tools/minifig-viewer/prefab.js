@@ -337,7 +337,21 @@ function apply(d0,plan,ctx){
   {const n=ov.getUint16(20,false);const sp=C.selfPath;const nsp=sp.slice(0,sp.length-C.file.length)+C.file.replace(new RegExp('^'+C.baseName,'i'),plan.internalName);
     const b=enc(nsp+'\0');const hdr=ov.getUint32(0,false);
     out=cat([out.slice(0,20),new Uint8Array([b.length>>8,b.length&255]),b,plan.keepId?out.slice(22+n,22+n+16):rand16(),out.slice(22+n+16)]);dv(out).setUint32(0,hdr+b.length-n,false);
-    C.newSelfPath=nsp;}
+    C.newSelfPath=nsp;
+  // source path (BE u16 length incl. NUL + path, then the resource id the roster links to): OMP looks for
+  // "<self path without _baked>" here. Some game prefabs were built from another character's
+  // (CLONETROOPER's says captaintypho.prefab), so the rename above can miss it: write it outright.
+    if(!plan.keepId){const sv=dv(out);const hend=4+sv.getUint32(0,false);const want=nsp.toLowerCase().replace(/_baked$/,'');
+      const mark=enc(C.isScene?'.scene\0':'.prefab\0');let at=-1;
+      for(let i=find(out,mark,24);i>0&&i<hend&&at<0;i=find(out,mark,i+1)){const end=i+mark.length;
+        for(let s=i;s>=2;s--){if(sv.getUint16(s-2,false)==end-s&&out[s]>=0x20){at=s-2;break;}if(out[s-1]<0x20)break;}}
+      if(at<0)throw new Error('source path not found in the '+C.file+' header');
+      const oldLen=sv.getUint16(at,false);const cur=latin(out,at+2,at+2+oldLen-1);
+      if(cur.toLowerCase()!==want){const b=enc(want+'\0');const hdr2=sv.getUint32(0,false);
+        out=cat([out.slice(0,at),new Uint8Array([b.length>>8,b.length&255]),b,out.slice(at+2+oldLen)]);dv(out).setUint32(0,hdr2+b.length-oldLen,false);
+        log.push('source path '+cur+' → '+want);}
+      // its resource id: new, so the character doesn't share the base's roster id (the rename above already did this when it found it)
+      if(!(so>0)){const ip=at+2+want.length+1;const oid=out.slice(ip,ip+16);const rid=rand16();for(const o of findAll(out,oid))out.set(rid,o);}}}
   // header load list: new textures, swapped models
   const H=Deps(out);const paths=[];for(let k=0;k<H.nrec;k++)paths.push(H.path(H.recNode(k)));
   const entries=[];
