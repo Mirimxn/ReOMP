@@ -353,6 +353,43 @@ function apply(d0,plan,ctx){
   if(dropOld.size)out=dropRecords(out,(p)=>!dropOld.has(p));
   return {data:out,selfPath:C.newSelfPath,log};}
 
+// ---------- grafting: copy a whole top-level attachment entity (with its components) from a donor into the base as a new slot
+// the block is copied byte for byte; only its class numbers (each file numbers its own classes), its GUIDs and the counts and sizes around it change
+function classSig(S,ci,memo){memo=memo||new Map();if(memo.has(ci))return memo.get(ci);const c=S.classes[ci];if(!c)return '?';memo.set(ci,c.name);
+  const s=c.name+'@'+c.version+'{'+c.fields.map(f=>{const cls=(f.flags&0x80000000)||f.type>=S.types.length;
+    return f.name+':'+(cls?classSig(S,f.type,memo):S.types[f.type][0])+':'+(f.flags>>>0).toString(16)+':'+f.ref+':'+f.c;}).join(',')+'}';
+  memo.set(ci,s);return s;}
+function graftable(C,U,key){const e=U.O.find(x=>x.class=='apiEntity'&&x.entity==key&&!x.path);if(!e)return {why:'no top-level entity '+key+' in '+U.baseName};
+  const sub=U.O.filter(x=>x.o>=e.o&&x.end<=e.end);const map=new Map();const missing=[],differ=[];
+  for(const x of sub){if(map.has(x.ci))continue;const nm=U.S.classes[x.ci].name;const ci=C.S.classes.findIndex(c=>c.name==nm);
+    if(ci<0){missing.push(nm);continue;}if(classSig(C.S,ci)!==classSig(U.S,x.ci))differ.push(nm);map.set(x.ci,ci);}
+  if(JSON.stringify(C.S.types)!==JSON.stringify(U.S.types))differ.push('TypeList');
+  return {e,sub,map,missing,differ,why:missing.length?C.baseName+' has no '+missing.join(', '):differ.length?'different layout of '+differ.join(', '):null};}
+function graft(d0,ud,key,opt){opt=opt||{};const C=readCharacter(d0),U=readCharacter(ud);const g=graftable(C,U,key);if(g.why)throw new Error(g.why);
+  if(C.O.some(x=>x.class=='apiEntity'&&x.entity==key&&!x.path)&&!opt.allowSameName)throw new Error(C.baseName+' already has '+key);
+  const {e,sub,map}=g;const v=dv(d0);
+  // the block: class prefix + object, with class numbers remapped and fresh GUIDs on the entity and its components
+  const s0=e.o-5;const blk=ud.slice(s0,e.end);const bv=dv(blk);
+  for(const x of sub){bv.setUint32(x.o-4-s0,map.get(x.ci),true);if(U.D.isComp(x.ci))blk.set(rand16(),x.o+18-s0);}
+  // where: after the base's last top-level attachment, else before Assistant/Locators
+  const root=C.O[0];const kids=C.O.filter(x=>x.i>0&&!C.O.some(y=>y.i>0&&y!==x&&y.o<x.o&&x.end<=y.end));
+  const cntPos=kids[0].o-9;if(v.getUint32(cntPos,true)!==kids.length)throw new Error('unexpected root layout in '+C.file);
+  const tops=C.attachments.map(r=>r.obj).filter(o=>o.class=='apiEntity'&&!o.path);
+  let pos=tops.length?Math.max(...tops.map(o=>o.end)):(kids.find(k=>k.class=='apiEntity'&&/^(Assistant|Locators)$/.test(k.entity))||{}).o-5;
+  if(!(pos>root.o&&pos<root.end))throw new Error('no place for the new slot in '+C.file);
+  const n=blk.length;const d=cat([d0.slice(0,pos),blk,d0.slice(pos)]);const ov=dv(d);
+  ov.setUint32(cntPos,kids.length+1,true);
+  for(const x of C.O)if(x.o<pos&&pos<x.end)ov.setUint32(x.o,v.getUint32(x.o,true)+n,true);   // root and anything else around the slot
+  ov.setUint32(C.olo,v.getUint32(C.olo,true)+n,true);
+  // the slot's resources: load-list records from the donor for every path the base doesn't list yet
+  const paths=new Set();for(const x of sub){const T=U.D.traceOf(x);for(const [nm,k,p] of T)if(k=='handle'){const hp=handlePath(ud,p);if(hp)paths.add(hp.toLowerCase());}}
+  const H=Deps(d);const known=new Set();for(let k=0;k<H.nrec;k++)known.add(H.path(H.recNode(k)).toLowerCase());
+  const DU=Deps(ud);const recs=new Map();for(let k=0;k<DU.nrec;k++){const q=DU.path(DU.recNode(k)).toLowerCase();if(!recs.has(q))recs.set(q,[]);recs.get(q).push(DU.recs[k]);}
+  const entries=[];const unlisted=[];
+  for(const p of paths)for(const q of [p,p.replace(/_dx11\./,'_nxg.')]){if(known.has(q))continue;known.add(q);const r=recs.get(q);if(r)r.forEach(x=>entries.push([q,x]));else if(q==p)unlisted.push(p);}
+  const out=entries.length?addDependencies(d,entries):d;
+  return {data:out,log:['grafted '+key+' from '+U.baseName+' ('+sub.length+' objects, '+n+' bytes) into '+C.baseName+(entries.length?', '+entries.length+' load-list records':'')],paths:[...paths],unlisted};}
+
 // ---------- check: every top-level object decodes to its exact size
 function verify(d){const C=readCharacter(d);const D=new Dec(d,C.S);let bad=0;
   for(const x of C.O){if(x.i==0||x.class=='ROOT')continue;if(x.path.includes('/'))continue;D.traceOf(x);if(D.bad)bad++;}
@@ -374,6 +411,6 @@ function zip(files){const local=[],central=[];let off=0;
 function specialNames(m){const out=[];for(let i=0;i<m.length-2;i++){if(m[i]===36&&(i==0||m[i-1]===0)){let e=i+1;while(e<m.length&&e-i<64&&((m[e]>=48&&m[e]<=57)||(m[e]>=65&&m[e]<=90)||(m[e]>=97&&m[e]<=122)||m[e]===95))e++;
   if(m[e]===0&&e-i>3){const s=latin(m,i+1,e);if(!out.includes(s))out.push(s);}}}return out;}
 
-return {Schema,objtable,Dec,Deps,readCharacter,apply,retargetHeader,headerId,modelStem,renameInHeader,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
+return {graft,graftable,Schema,objtable,Dec,Deps,readCharacter,apply,retargetHeader,headerId,modelStem,renameInHeader,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
 })();
 if(typeof module!='undefined')module.exports=PF;
