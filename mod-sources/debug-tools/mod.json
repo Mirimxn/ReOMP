@@ -1,5 +1,6 @@
 {
   "name": "Debug Tools",
+  "version": "0.1.0",
   "actions": [
     {
       "typeId": "register-scripting-module-action",
@@ -11,13 +12,16 @@
   ],
   "dependencies": [
     {
-      "id": "c-func-hook1"
+      "id": "c-func-hook1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "c-api1"
+      "id": "c-api1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "input-hook1"
+      "id": "input-hook1",
+      "minVersion": "0.1.0"
     }
   ],
   "description": "Developer tools for reloading scripting modules."

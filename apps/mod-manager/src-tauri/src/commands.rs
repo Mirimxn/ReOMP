@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::deployer::{self, DeployState, DeployStatus};
+use crate::legacy;
 use crate::library::{self, Library};
 use crate::resolve::{self, Problem};
 use crate::settings::{self, ManagerState};
@@ -30,6 +31,8 @@ pub struct Core {
     watcher: Option<watch::Watcher>,
     watcher_error: Option<String>,
     pub(crate) deploy: DeployState,
+    /// IDs of the core mods bundled with this build.
+    bundled_ids: BTreeSet<String>,
 }
 
 #[derive(Default)]
@@ -51,6 +54,34 @@ impl Core {
                 false
             }
         }
+    }
+
+    /// Every game folder the manager knows, chosen or installed into.
+    fn game_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = self.state.targets.values().filter_map(|t| t.path.clone()).collect();
+        for receipt in self.deploy.receipts.values() {
+            if !dirs.iter().any(|d| targets::same_dir(d, &receipt.game_dir)) {
+                dirs.push(receipt.game_dir.clone());
+            }
+        }
+        dirs
+    }
+
+    /// `id` and every mod it needs, transitively, that the library has.
+    fn with_dependencies(&self, id: &str) -> BTreeSet<String> {
+        let mut found = BTreeSet::new();
+        let mut queue = vec![id.to_string()];
+        while let Some(next) = queue.pop() {
+            if !found.insert(next.clone()) {
+                continue;
+            }
+            let Some(versions) = self.library.packages.get(&next) else { continue };
+            let entry = self.state.pinned.get(&next).and_then(|v| versions.get(v)).or_else(|| versions.values().next_back());
+            if let Some(entry) = entry {
+                queue.extend(entry.info.manifest.dependencies.iter().map(|d| d.id.clone()));
+            }
+        }
+        found
     }
 
     fn selection_for(&self, state: &ManagerState) -> resolve::Selection {
@@ -89,14 +120,17 @@ pub struct Outcome {
     ok: bool,
     title: String,
     details: Vec<String>,
+    /// A mod that can be enabled together with the mods it needs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    offer: Option<String>,
 }
 
 impl Outcome {
     fn ok(details: Vec<String>) -> Self {
-        Outcome { ok: true, title: String::new(), details }
+        Outcome { ok: true, title: String::new(), details, offer: None }
     }
     fn rejected(title: &str, details: impl IntoIterator<Item = String>) -> Self {
-        Outcome { ok: false, title: title.to_string(), details: details.into_iter().collect() }
+        Outcome { ok: false, title: title.to_string(), details: details.into_iter().collect(), offer: None }
     }
 }
 
@@ -143,8 +177,18 @@ pub struct TargetView {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct LegacyView {
+    id: String,
+    name: String,
+    folder: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LibraryView {
     targets: Vec<TargetView>,
+    /// Old mods in legacy-mods that aren't in the library and aren't bundled.
+    legacy: Vec<LegacyView>,
     deploy: DeployStatus,
     omp_version: Option<String>,
     library_dir: Option<String>,
@@ -202,8 +246,14 @@ fn view(core: &Core) -> LibraryView {
             }
         })
         .collect();
+    let legacy = legacy::find(&core.game_dirs())
+        .into_iter()
+        .filter(|m| !core.library.packages.contains_key(&m.id) && !core.bundled_ids.contains(&m.id))
+        .map(|m| LegacyView { id: m.id, name: m.name, folder: m.folder.display().to_string() })
+        .collect();
     LibraryView {
         targets,
+        legacy,
         deploy: core.deploy.status.clone(),
         omp_version: match &core.deploy.payload {
             Some(Ok(p)) => Some(p.version.clone()),
@@ -275,12 +325,40 @@ pub fn init(app: &AppHandle) {
         }
         start_watcher(app, &mut core);
         let copying = core.rescan();
+        import_bundled(app, &mut core);
         deployer::init(app, &mut core);
         copying
     };
     if copying {
         let app = app.clone();
         thread::spawn(move || watch::refresh_until_settled(&app));
+    }
+}
+
+/// Adds core mod ZIPs shipped with this build that the library hasn't been
+/// offered yet, through the normal import checks.
+fn import_bundled(app: &AppHandle, core: &mut Core) {
+    let Ok(dir) = app.path().resource_dir().map(|d| d.join("core-mods")) else { return };
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let Some(library_dir) = core.library_dir.clone() else { return };
+    let mut offered = false;
+    for path in entries.flatten().map(|e| e.path()) {
+        let Ok(info) = crate::package::read_package(&path) else { continue };
+        core.bundled_ids.insert(info.id.clone());
+        let key = format!("{}@{}", info.id, info.manifest.version);
+        if core.state.bundled_imported.contains(&key) {
+            continue;
+        }
+        if library::import(&library_dir, &core.library, &[path]).is_ok() {
+            core.state.bundled_imported.insert(key);
+            offered = true;
+            core.rescan();
+        }
+    }
+    if offered {
+        if let Some(file) = &core.state_file {
+            let _ = settings::save_state(file, &core.state);
+        }
     }
 }
 
@@ -365,14 +443,33 @@ pub async fn pick_and_import(app: AppHandle) -> Result<Outcome, String> {
 }
 
 #[tauri::command]
-pub async fn set_enabled(app: AppHandle, state: State<'_, AppState>, id: String, enabled: bool) -> Result<Outcome, String> {
-    let outcome = lock(&state).change(|s| {
-        if enabled {
-            s.enabled.insert(id.clone());
+pub async fn set_enabled(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+    with_dependencies: Option<bool>,
+) -> Result<Outcome, String> {
+    let outcome = {
+        let mut core = lock(&state);
+        let needed = core.with_dependencies(&id);
+        if enabled && with_dependencies == Some(true) {
+            core.change(|s| s.enabled.extend(needed))
         } else {
-            s.enabled.remove(&id);
+            let mut outcome = core.change(|s| {
+                if enabled {
+                    s.enabled.insert(id.clone());
+                } else {
+                    s.enabled.remove(&id);
+                }
+            });
+            let missing = needed.iter().any(|d| !core.state.enabled.contains(d) && *d != id);
+            if enabled && !outcome.ok && missing {
+                outcome.offer = Some(id.clone());
+            }
+            outcome
         }
-    });
+    };
     notify(&app);
     Ok(outcome)
 }
@@ -481,4 +578,32 @@ pub async fn retry_deploy(app: AppHandle, state: State<'_, AppState>) -> Result<
     }
     notify(&app);
     Ok(())
+}
+
+/// Packs an old mod from legacy-mods into the library.
+#[tauri::command]
+pub async fn add_legacy_mod(app: AppHandle, folder: String) -> Result<Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let (found, temp_dir) = {
+            let state = app.state::<AppState>();
+            let core = lock(&state);
+            let found = legacy::find(&core.game_dirs()).into_iter().find(|m| m.folder.display().to_string() == folder);
+            (found, core.deploy.data_dir.as_ref().map(|d| d.join("tmp")))
+        };
+        let (Some(found), Some(temp_dir)) = (found, temp_dir) else {
+            return Outcome::rejected("That old mod is no longer there.", None::<String>);
+        };
+        if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+            return Outcome::rejected("Couldn't prepare the mod:", Some(e.to_string()));
+        }
+        let zip = temp_dir.join(format!("{}-{}.zip", found.id, legacy::LEGACY_VERSION));
+        let outcome = match legacy::pack(&found.folder, &found.id, &zip) {
+            Ok(()) => import_paths(&app, vec![zip.clone()]),
+            Err(e) => Outcome::rejected("Couldn't pack that mod:", Some(e)),
+        };
+        let _ = std::fs::remove_file(&zip);
+        outcome
+    })
+    .await
+    .map_err(|e| e.to_string())
 }

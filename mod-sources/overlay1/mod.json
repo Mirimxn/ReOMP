@@ -1,5 +1,6 @@
 {
   "name": "Overlay1",
+  "version": "0.1.0",
   "actions": [
     {
       "typeId": "register-shared-assembly-action",
@@ -11,10 +12,12 @@
   ],
   "dependencies": [
     {
-      "id": "c-func-hook1"
+      "id": "c-func-hook1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "input-hook1"
+      "id": "input-hook1",
+      "minVersion": "0.1.0"
     }
   ],
   "description": "Chromium-based overlays rendered in the game."

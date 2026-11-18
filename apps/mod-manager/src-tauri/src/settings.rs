@@ -26,6 +26,10 @@ pub struct ManagerState {
     /// Game folders and whether OMP and mods are installed into them.
     #[serde(default)]
     pub targets: BTreeMap<TargetKind, TargetSettings>,
+    /// Bundled core mod ZIPs already offered to the library, as `id@version`,
+    /// so one the player removes isn't added back.
+    #[serde(default, rename = "bundledImported")]
+    pub bundled_imported: BTreeSet<String>,
 }
 
 pub struct Loaded {

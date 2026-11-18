@@ -1,7 +1,8 @@
 {
   "bundle": {
     "resources": {
-      "../omp-payload/": "omp-payload/"
+      "../omp-payload/": "omp-payload/",
+      "../core-mods/": "core-mods/"
     }
   }
 }
