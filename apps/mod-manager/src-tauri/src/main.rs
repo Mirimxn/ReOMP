@@ -1,10 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod deploy;
+mod deployer;
 mod library;
 mod package;
 mod resolve;
 mod settings;
+mod targets;
 #[cfg(test)]
 mod testutil;
 mod version;
@@ -25,6 +28,9 @@ fn main() {
             commands::set_enabled,
             commands::set_pinned_version,
             commands::retry_watcher,
+            commands::pick_game_folder,
+            commands::set_target_enabled,
+            commands::retry_deploy,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the ReOMP Mod Manager");

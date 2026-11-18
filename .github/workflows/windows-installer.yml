@@ -28,8 +28,6 @@ jobs:
       run:
         shell: pwsh
         working-directory: apps/mod-manager
-    env:
-      RUSTUP_TOOLCHAIN: "1.95.0"
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -41,8 +39,14 @@ jobs:
           cache: npm
           cache-dependency-path: apps/mod-manager/package-lock.json
 
-      - name: Install Rust 1.95.0
-        run: rustup toolchain install 1.95.0 --profile minimal --target x86_64-pc-windows-msvc
+      - name: Install Rust 1.95.0 (manager) and 1.83.0 (OMP)
+        run: |
+          rustup toolchain install 1.95.0 --profile minimal --target x86_64-pc-windows-msvc
+          rustup toolchain install 1.83.0 --profile minimal --target x86_64-pc-windows-msvc
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -58,14 +62,28 @@ jobs:
             throw "Tag $env:GITHUB_REF_NAME does not match app version v$version"
           }
 
+      - name: Build the OMP release
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/package-release.ps1 -OutZip omp-release.zip
+
+      - name: Stage the OMP payload
+        working-directory: .
+        run: |
+          $sha = (git rev-parse --short HEAD).Trim()
+          ./scripts/stage-manager-payload.ps1 -ReleaseZip omp-release.zip -OutDir apps/mod-manager/omp-payload -Version "${{ steps.version.outputs.version }}+$sha"
+
       - name: Install dependencies
         run: |
           npm.cmd ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build setup executable
+        env:
+          RUSTUP_TOOLCHAIN: "1.95.0"
         run: |
-          npm.cmd run tauri build -- --ci --target x86_64-pc-windows-msvc --bundles nsis -- --locked
+          npm.cmd run tauri build -- --ci --target x86_64-pc-windows-msvc --bundles nsis --config src-tauri/tauri.payload.conf.json -- --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Name the setup executable

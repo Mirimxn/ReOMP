@@ -10,9 +10,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::deployer::{self, DeployState, DeployStatus};
 use crate::library::{self, Library};
 use crate::resolve::{self, Problem};
 use crate::settings::{self, ManagerState};
+use crate::targets::{self, TargetKind};
 use crate::version::Version;
 use crate::watch;
 
@@ -23,10 +25,11 @@ pub struct Core {
     library_dir: Option<PathBuf>,
     library_error: Option<String>,
     state_file: Option<PathBuf>,
-    state: ManagerState,
-    library: Library,
+    pub(crate) state: ManagerState,
+    pub(crate) library: Library,
     watcher: Option<watch::Watcher>,
     watcher_error: Option<String>,
+    pub(crate) deploy: DeployState,
 }
 
 #[derive(Default)]
@@ -75,6 +78,7 @@ impl Core {
             return Outcome::rejected("Couldn't save the change:", Some(e));
         }
         self.state = proposed;
+        self.deploy.kick();
         Outcome::ok(Vec::new())
     }
 }
@@ -127,7 +131,22 @@ pub struct InvalidView {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TargetView {
+    kind: TargetKind,
+    label: &'static str,
+    path: Option<String>,
+    enabled: bool,
+    installed: bool,
+    /// Mods installed by the last successful deployment, `id version`.
+    installed_mods: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LibraryView {
+    targets: Vec<TargetView>,
+    deploy: DeployStatus,
+    omp_version: Option<String>,
     library_dir: Option<String>,
     library_error: Option<String>,
     watcher_error: Option<String>,
@@ -166,7 +185,30 @@ fn view(core: &Core) -> LibraryView {
             }
         })
         .collect();
+    let targets = TargetKind::ALL
+        .iter()
+        .map(|&kind| {
+            let settings = core.state.targets.get(&kind).cloned().unwrap_or_default();
+            let receipt = core.deploy.receipts.get(kind.key());
+            TargetView {
+                kind,
+                label: kind.label(),
+                path: settings.path.map(|p| p.display().to_string()),
+                enabled: settings.enabled,
+                installed: receipt.is_some(),
+                installed_mods: receipt
+                    .map(|r| r.mods.iter().map(|(id, m)| format!("{id} {}", m.version)).collect())
+                    .unwrap_or_default(),
+            }
+        })
+        .collect();
     LibraryView {
+        targets,
+        deploy: core.deploy.status.clone(),
+        omp_version: match &core.deploy.payload {
+            Some(Ok(p)) => Some(p.version.clone()),
+            _ => None,
+        },
         library_dir: core.library_dir.as_ref().map(|p| p.display().to_string()),
         library_error: core.library_error.clone(),
         watcher_error: core.watcher_error.clone(),
@@ -180,11 +222,11 @@ fn view(core: &Core) -> LibraryView {
     }
 }
 
-fn lock(state: &AppState) -> MutexGuard<'_, Core> {
+pub(crate) fn lock(state: &AppState) -> MutexGuard<'_, Core> {
     state.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn notify(app: &AppHandle) {
+pub(crate) fn notify(app: &AppHandle) {
     let _ = app.emit(LIBRARY_CHANGED, ());
 }
 
@@ -212,14 +254,29 @@ pub fn init(app: &AppHandle) {
             Ok((config_dir, data_dir)) => match settings::load(&config_dir, &data_dir) {
                 Ok(loaded) => {
                     core.library_dir = Some(loaded.library_dir);
-                    core.state_file = Some(loaded.state_file);
+                    core.deploy.data_dir = Some(loaded.data_dir);
+                    core.state_file = Some(loaded.state_file.clone());
                     core.state = loaded.state;
+                    // Suggest game folders the player hasn't chosen yet.
+                    let mut found = false;
+                    for kind in TargetKind::ALL {
+                        let entry = core.state.targets.entry(kind).or_default();
+                        if entry.path.is_none() {
+                            entry.path = targets::discover(kind);
+                            found |= entry.path.is_some();
+                        }
+                    }
+                    if found {
+                        let _ = settings::save_state(&loaded.state_file, &core.state);
+                    }
                 }
                 Err(e) => core.library_error = Some(e),
             },
         }
         start_watcher(app, &mut core);
-        core.rescan()
+        let copying = core.rescan();
+        deployer::init(app, &mut core);
+        copying
     };
     if copying {
         let app = app.clone();
@@ -229,7 +286,13 @@ pub fn init(app: &AppHandle) {
 
 /// Called by the watcher thread. Returns true if another check is needed soon.
 pub fn rescan_and_notify(app: &AppHandle) -> bool {
-    let copying = lock(&app.state::<AppState>()).rescan();
+    let copying = {
+        let state = app.state::<AppState>();
+        let mut core = lock(&state);
+        let copying = core.rescan();
+        core.deploy.kick();
+        copying
+    };
     notify(app);
     copying
 }
@@ -266,6 +329,7 @@ fn import_paths(app: &AppHandle, paths: Vec<PathBuf>) -> Outcome {
         Err(errors) => Outcome::rejected("Nothing was imported:", errors),
     };
     core.rescan();
+    core.deploy.kick();
     drop(core);
     notify(app);
     outcome
@@ -343,6 +407,77 @@ pub async fn retry_watcher(app: AppHandle, state: State<'_, AppState>) -> Result
         let mut core = lock(&state);
         start_watcher(&app, &mut core);
         core.rescan();
+    }
+    notify(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn pick_game_folder(app: AppHandle, kind: TargetKind) -> Result<Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(picked) = app.dialog().file().set_title(format!("Choose the {} game folder", kind.label())).blocking_pick_folder() else {
+            return Outcome::ok(Vec::new());
+        };
+        let path = match picked.into_path() {
+            Ok(path) => path,
+            Err(e) => return Outcome::rejected("Can't use that folder:", Some(e.to_string())),
+        };
+        let dir = match targets::validate_game_dir(&path) {
+            Ok(dir) => dir,
+            Err(e) => return Outcome::rejected("That isn't the game folder:", Some(e)),
+        };
+        let state = app.state::<AppState>();
+        let mut core = lock(&state);
+        let clash = TargetKind::ALL.into_iter().find(|&other| {
+            other != kind
+                && core.state.targets.get(&other).and_then(|t| t.path.as_ref()).is_some_and(|p| targets::same_dir(p, &dir))
+        });
+        if let Some(other) = clash {
+            return Outcome::rejected(
+                "That folder is already used:",
+                Some(format!("{} is set as the {} game folder.", dir.display(), other.label())),
+            );
+        }
+        let outcome = core.change(|s| s.targets.entry(kind).or_default().path = Some(dir));
+        drop(core);
+        notify(&app);
+        outcome
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_target_enabled(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    kind: TargetKind,
+    enabled: bool,
+) -> Result<Outcome, String> {
+    let outcome = {
+        let mut core = lock(&state);
+        let path = core.state.targets.get(&kind).and_then(|t| t.path.clone());
+        match (enabled, path) {
+            (true, None) => Outcome::rejected("Choose the game folder first.", None::<String>),
+            (true, Some(path)) if targets::validate_game_dir(&path).is_err() => Outcome::rejected(
+                "That game folder isn't usable:",
+                targets::validate_game_dir(&path).err(),
+            ),
+            _ => core.change(|s| s.targets.entry(kind).or_default().enabled = enabled),
+        }
+    };
+    notify(&app);
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn retry_deploy(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let mut core = lock(&state);
+        if core.deploy.recovery_error.is_some() {
+            deployer::recover(&mut core.deploy);
+        }
+        core.deploy.request_retry();
     }
     notify(&app);
     Ok(())

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::targets::{TargetKind, TargetSettings};
 use crate::version::Version;
 
 #[derive(Serialize, Deserialize)]
@@ -22,9 +23,13 @@ pub struct ManagerState {
     pub enabled: BTreeSet<String>,
     #[serde(default, rename = "pinnedVersions")]
     pub pinned: BTreeMap<String, Version>,
+    /// Game folders and whether OMP and mods are installed into them.
+    #[serde(default)]
+    pub targets: BTreeMap<TargetKind, TargetSettings>,
 }
 
 pub struct Loaded {
+    pub data_dir: PathBuf,
     pub library_dir: PathBuf,
     pub state_file: PathBuf,
     pub state: ManagerState,
@@ -80,7 +85,7 @@ pub fn load(config_dir: &Path, data_dir: &Path) -> Result<Loaded, String> {
     } else {
         ManagerState::default()
     };
-    Ok(Loaded { library_dir, state_file, state })
+    Ok(Loaded { data_dir: data_dir.to_path_buf(), library_dir, state_file, state })
 }
 
 pub fn save_state(file: &Path, state: &ManagerState) -> Result<(), String> {
@@ -88,7 +93,7 @@ pub fn save_state(file: &Path, state: &ManagerState) -> Result<(), String> {
 }
 
 /// Writes a temporary file and renames it over the target.
-fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
+pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
     let temp = path.with_extension("json.tmp");
     fs::write(&temp, text + "\n").map_err(|e| format!("Couldn't save {}: {e}", path.display()))?;
@@ -117,6 +122,7 @@ mod tests {
         let mut state = ManagerState::default();
         state.enabled.insert("v1".into());
         state.pinned.insert("v1".into(), Version(1, 0, 0));
+        state.targets.insert(TargetKind::Steam, TargetSettings { path: Some(root.join("game")), enabled: true });
         save_state(&loaded.state_file, &state).unwrap();
         assert_eq!(load(&config, &data).unwrap().state, state);
     }
