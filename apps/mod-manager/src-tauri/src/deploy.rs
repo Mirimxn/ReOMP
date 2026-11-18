@@ -230,7 +230,7 @@ impl Deployment {
             return Err(format!("Injected failure moving {}", from.display()));
         }
         self.write(&Entry::Move { from: from.to_path_buf(), to: to.to_path_buf() })?;
-        fs::rename(from, to).map_err(|e| format!("Can't move {} to {}: {e}", from.display(), to.display()))?;
+        rename_with_retry(from, to)?;
         self.moves.push((from.to_path_buf(), to.to_path_buf()));
         Ok(())
     }
@@ -419,6 +419,32 @@ impl Deployment {
         undo(&self.moves, &self.created, &self.txn_dirs)?;
         fs::remove_file(&self.journal).map_err(|e| format!("Can't remove {}: {e}", self.journal.display()))
     }
+}
+
+/// Windows refuses to rename a folder while any program has a file inside it
+/// open (error 5 or 32). Antivirus scans release them quickly, so retry briefly.
+fn rename_with_retry(from: &Path, to: &Path) -> Result<(), String> {
+    let mut attempt: u64 = 0;
+    loop {
+        match fs::rename(from, to) {
+            Ok(()) => return Ok(()),
+            Err(e) if attempt < 6 && is_in_use(&e) => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(250 * attempt));
+            }
+            Err(e) if is_in_use(&e) => {
+                return Err(format!(
+                    "Windows wouldn't let the Mod Manager move {}. Another program is probably using it or something inside it. Close any File Explorer window showing that folder and any tool with its files open, then press Retry. ({e})",
+                    from.display()
+                ));
+            }
+            Err(e) => return Err(format!("Can't move {} to {}: {e}", from.display(), to.display())),
+        }
+    }
+}
+
+fn is_in_use(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::PermissionDenied || matches!(error.raw_os_error(), Some(5) | Some(32))
 }
 
 fn finish(txn_dirs: &[PathBuf], tidy: &[(PathBuf, PathBuf)]) {
