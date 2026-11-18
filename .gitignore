@@ -13,3 +13,7 @@
 /tools/preview-scene-maker/*.SCENE_BAKED
 /fixtures/**/CHARS/
 /fixtures/**/*.png
+
+# Mod Manager OMP payload staged at build time
+apps/mod-manager/omp-payload/
+omp-release.zip

@@ -26,7 +26,24 @@ type ModView = {
   selected: string | null;
   problems: string[];
 };
+type TargetView = {
+  kind: "steam" | "epic";
+  label: string;
+  path: string | null;
+  enabled: boolean;
+  installed: boolean;
+  installedMods: string[];
+};
+type DeployStatus =
+  | { state: "idle" }
+  | { state: "working" }
+  | { state: "waiting"; games: string[] }
+  | { state: "blocked"; reasons: string[] }
+  | { state: "failed"; title: string; details: string[] };
 type LibraryView = {
+  targets: TargetView[];
+  deploy: DeployStatus;
+  ompVersion: string | null;
   libraryDir: string | null;
   libraryError: string | null;
   watcherError: string | null;
@@ -78,6 +95,70 @@ function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => v
   );
 }
 
+function DeployBanner({ status, onRetry }: { status: DeployStatus; onRetry: () => void }) {
+  switch (status.state) {
+    case "idle":
+      return null;
+    case "working":
+      return <div className="banner info">Updating the game files…</div>;
+    case "waiting":
+      return (
+        <div className="banner info">
+          <strong>Waiting for the game to close.</strong> Changes are applied when {status.games.join(" and ")} closes.
+        </div>
+      );
+    case "blocked":
+      return (
+        <div className="banner error">
+          <strong>The game can't be updated yet:</strong>
+          <ul>
+            {status.reasons.map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+        </div>
+      );
+    case "failed":
+      return (
+        <div className="banner error">
+          <strong>{status.title}</strong>
+          <ul>
+            {status.details.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+          <button onClick={onRetry}>Retry</button>
+        </div>
+      );
+  }
+}
+
+function TargetRow({ target, onOutcome }: { target: TargetView; onOutcome: (o: Outcome) => void }) {
+  return (
+    <li className="target">
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={target.enabled}
+          onChange={(e) =>
+            invoke<Outcome>("set_target_enabled", { kind: target.kind, enabled: e.target.checked }).then(onOutcome)
+          }
+        />
+        <span className="mod-name">{target.label}</span>
+      </label>
+      <span className="target-state">
+        {target.installed ? `Installed · ${target.installedMods.length} mod${target.installedMods.length === 1 ? "" : "s"}` : "Not installed"}
+      </span>
+      <button onClick={() => invoke<Outcome>("pick_game_folder", { kind: target.kind }).then(onOutcome)}>
+        {target.path ? "Change folder…" : "Choose folder…"}
+      </button>
+      <p className="mod-description">
+        {target.path ? <code>{target.path}</code> : "Game folder not found. Choose it to install OMP and mods."}
+      </p>
+    </li>
+  );
+}
+
 function App() {
   const [library, setLibrary] = useState<LibraryView | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -123,12 +204,27 @@ function App() {
   return (
     <main className={`app${dragging ? " dragging" : ""}`}>
       <header>
-        <h1>Mods</h1>
+        <h1>ReOMP Mod Manager</h1>
         <button disabled={busy || !library.libraryDir} onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}>
           {busy ? "Adding…" : "Add mod ZIPs…"}
         </button>
       </header>
 
+      <section>
+        <h2>Game</h2>
+        <p className="hint">
+          Tick a game to install OMP{library.ompVersion ? ` (${library.ompVersion})` : ""} and your enabled mods into it.
+          Changes are applied automatically. Your old <code>mods</code> folder is kept in <code>legacy-mods</code>.
+        </p>
+        <DeployBanner status={library.deploy} onRetry={() => invoke("retry_deploy").then(refresh)} />
+        <ul className="mods">
+          {library.targets.map((t) => (
+            <TargetRow key={t.kind} target={t} onOutcome={showOutcome} />
+          ))}
+        </ul>
+      </section>
+
+      <h2>Mods</h2>
       {library.libraryError && <div className="banner error">{library.libraryError}</div>}
       {library.watcherError && (
         <div className="banner error">
