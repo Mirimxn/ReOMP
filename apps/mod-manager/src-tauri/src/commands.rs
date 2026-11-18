@@ -56,6 +56,42 @@ impl Core {
         }
     }
 
+    /// Deletes one version's ZIPs from the library unless the current
+    /// selection still needs that version.
+    fn remove_version(&mut self, id: &str, version: Version) -> Outcome {
+        let Some(entry) = self.library.version(id, version).cloned() else {
+            return Outcome::rejected("That version is no longer in the library.", None::<String>);
+        };
+        let mut proposed = self.library.clone();
+        if let Some(versions) = proposed.packages.get_mut(id) {
+            versions.remove(&version);
+            if versions.is_empty() {
+                proposed.packages.remove(id);
+            }
+        }
+        let current = self.selection_for(&self.state).problems;
+        let after = resolve::resolve(&proposed, &self.state.enabled, &self.state.pinned).problems;
+        let added: Vec<String> = after.into_iter().filter(|p| !current.contains(p)).map(|p| p.message).collect();
+        if !added.is_empty() {
+            let mut details = added;
+            details.push(format!("Disable {id} or pick another version first."));
+            return Outcome::rejected(&format!("{id} {version} is still needed, so it wasn't removed:"), details);
+        }
+        let mut failed = Vec::new();
+        for file in entry.files.keys() {
+            if let Err(e) = std::fs::remove_file(file) {
+                failed.push(format!("{}: {e}", file.display()));
+            }
+        }
+        self.rescan();
+        self.deploy.kick();
+        if failed.is_empty() {
+            Outcome::ok(vec![format!("Removed {id} {version}")])
+        } else {
+            Outcome::rejected("Some files couldn't be removed:", failed)
+        }
+    }
+
     /// Every game folder the manager knows, chosen or installed into.
     fn game_dirs(&self) -> Vec<PathBuf> {
         let mut dirs: Vec<PathBuf> = self.state.targets.values().filter_map(|t| t.path.clone()).collect();
@@ -153,6 +189,8 @@ pub struct ModView {
     enabled: bool,
     pinned: Option<Version>,
     selected: Option<Version>,
+    /// Version installed in the game by the last deployment, when any.
+    deployed: Option<Version>,
     problems: Vec<String>,
 }
 
@@ -225,6 +263,7 @@ fn view(core: &Core) -> LibraryView {
                 enabled: core.state.enabled.contains(id),
                 pinned: core.state.pinned.get(id).copied(),
                 selected: selection.selected.get(id).copied(),
+                deployed: core.deploy.receipts.values().find_map(|r| r.mods.get(id.as_str()).map(|m| m.version)),
                 problems: selection.problems.iter().filter(|p| &p.mod_id == id).map(|p| p.message.clone()).collect(),
             }
         })
@@ -606,4 +645,60 @@ pub async fn add_legacy_mod(app: AppHandle, folder: String) -> Result<Outcome, S
     })
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn remove_version(app: AppHandle, state: State<'_, AppState>, id: String, version: String) -> Result<Outcome, String> {
+    let outcome = match Version::parse(&version) {
+        Ok(version) => lock(&state).remove_version(&id, version),
+        Err(e) => Outcome::rejected("That version isn't valid:", Some(e)),
+    };
+    notify(&app);
+    Ok(outcome)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{temp_dir, write_mod};
+
+    fn core_with(dir: &std::path::Path, enabled: &[&str]) -> Core {
+        let mut core = Core { library_dir: Some(dir.to_path_buf()), ..Default::default() };
+        core.state.enabled = enabled.iter().map(|s| s.to_string()).collect();
+        core.rescan();
+        core
+    }
+
+    #[test]
+    fn removes_a_version_nothing_needs() {
+        let dir = temp_dir("remove-free");
+        write_mod(&dir, "a1.zip", "a", "1.0.0", &[], "x");
+        let a2 = write_mod(&dir, "a2.zip", "a", "2.0.0", &[], "x");
+        let mut core = core_with(&dir, &["a"]);
+        // The enabled mod falls back to 1.0.0, so 2.0.0 can go.
+        assert!(core.remove_version("a", Version(2, 0, 0)).ok);
+        assert!(!a2.exists());
+        assert_eq!(core.library.packages["a"].len(), 1);
+    }
+
+    #[test]
+    fn keeps_a_version_the_selection_needs() {
+        let dir = temp_dir("remove-needed");
+        let core_zip = write_mod(&dir, "core.zip", "core", "1.0.0", &[], "x");
+        write_mod(&dir, "feature.zip", "feature", "1.0.0", &[("core", "1.0.0")], "x");
+        let mut core = core_with(&dir, &["core", "feature"]);
+        let outcome = core.remove_version("core", Version(1, 0, 0));
+        assert!(!outcome.ok);
+        assert!(core_zip.exists());
+
+        // Pinned versions count too.
+        core.state.pinned.insert("feature".into(), Version(1, 0, 0));
+        assert!(!core.remove_version("feature", Version(1, 0, 0)).ok);
+
+        // A disabled mod can always be removed.
+        core.state.enabled.clear();
+        core.state.pinned.clear();
+        assert!(core.remove_version("core", Version(1, 0, 0)).ok);
+        assert!(!core_zip.exists());
+    }
 }

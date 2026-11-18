@@ -24,6 +24,7 @@ type ModView = {
   enabled: boolean;
   pinned: string | null;
   selected: string | null;
+  deployed: string | null;
   problems: string[];
 };
 type TargetView = {
@@ -56,6 +57,8 @@ type LegacyView = { id: string; name: string; folder: string };
 
 function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => void }) {
   const newest = mod.versions[0]?.version;
+  const [confirming, setConfirming] = useState(false);
+  const shown = mod.pinned ?? newest;
   return (
     <li className={`mod${mod.problems.length ? " has-problems" : ""}`}>
       <label className="toggle">
@@ -87,7 +90,30 @@ function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => v
           ))}
         </select>
       )}
+      {mod.versions.length > 0 && (
+        <button
+          className="remove"
+          title="Delete this version's ZIP from the library"
+          onBlur={() => setConfirming(false)}
+          onClick={() => {
+            if (!confirming) {
+              setConfirming(true);
+              return;
+            }
+            setConfirming(false);
+            invoke<Outcome>("remove_version", { id: mod.id, version: shown }).then(onOutcome);
+          }}
+        >
+          {confirming ? `Delete ${shown}?` : `Remove ${shown}`}
+        </button>
+      )}
       {mod.description && <p className="mod-description">{mod.description}</p>}
+      {mod.deployed && mod.deployed !== mod.selected && (
+        <p className="mod-description">
+          In the game: {mod.deployed}
+          {mod.selected ? ` (switching to ${mod.selected})` : mod.enabled ? "" : " (being removed)"}
+        </p>
+      )}
       {mod.problems.map((p) => (
         <p key={p} className="problem">
           {p}

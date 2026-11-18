@@ -33,6 +33,7 @@ fn main() {
             commands::set_target_enabled,
             commands::retry_deploy,
             commands::add_legacy_mod,
+            commands::remove_version,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the ReOMP Mod Manager");
