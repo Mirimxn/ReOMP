@@ -113,7 +113,6 @@ pub struct DeployMod {
 
 /// One target's requested end state. `want: None` removes the manager's files.
 pub struct TargetPlan<'a> {
-    pub key: String,
     pub label: String,
     pub game_dir: PathBuf,
     pub want: Option<(&'a Payload, &'a [DeployMod])>,
@@ -602,7 +601,7 @@ mod tests {
     }
 
     fn plan<'a>(dir: &Path, want: Option<(&'a Payload, &'a [DeployMod])>, previous: Option<Receipt>) -> TargetPlan<'a> {
-        TargetPlan { key: dir.display().to_string(), label: "Test".into(), game_dir: dir.into(), want, previous }
+        TargetPlan { label: "Test".into(), game_dir: dir.into(), want, previous }
     }
 
     fn run(f: &Fixture, plans: &[TargetPlan]) -> Result<Vec<Option<Receipt>>, String> {

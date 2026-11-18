@@ -61,10 +61,6 @@ impl DeployState {
         self.failed_request = None;
         self.kick();
     }
-
-    fn journal(&self) -> Option<PathBuf> {
-        self.data_dir.as_ref().map(|d| d.join(JOURNAL_FILE))
-    }
 }
 
 pub fn load_receipts(data_dir: &Path) -> Result<BTreeMap<String, Receipt>, String> {
@@ -221,7 +217,7 @@ fn prepare(core: &mut Core) -> Prepared {
 
     let satisfied = specs.iter().all(|s| {
         let want = s.want.then(|| (payload.as_ref().expect("payload checked"), &mods[..]));
-        TargetPlan { key: String::new(), label: String::new(), game_dir: s.game_dir.clone(), want, previous: s.previous.clone() }
+        TargetPlan { label: String::new(), game_dir: s.game_dir.clone(), want, previous: s.previous.clone() }
             .is_satisfied()
     });
     if satisfied {
@@ -261,7 +257,6 @@ fn execute(job: &Job) -> Result<Receipts, (DeployStatus, bool)> {
     let mut results = Receipts::new();
     for spec in &job.specs {
         let plan = TargetPlan {
-            key: spec.kind.key().into(),
             label: spec.kind.label().into(),
             game_dir: spec.game_dir.clone(),
             want: if spec.want { job.payload.as_ref().map(|p| (p, &job.mods[..])) } else { None },
