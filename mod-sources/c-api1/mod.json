@@ -1,5 +1,6 @@
 {
   "name": "CApi1",
+  "version": "0.1.0",
   "actions": [
     {
       "typeId": "register-shared-assembly-action",
@@ -26,7 +27,8 @@
   "description": "Game bindings and APIs for other OMP mods.",
   "dependencies": [
     {
-      "id": "c-func-hook1"
+      "id": "c-func-hook1",
+      "minVersion": "0.1.0"
     }
   ]
 }

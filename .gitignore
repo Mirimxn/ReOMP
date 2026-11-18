@@ -17,3 +17,4 @@
 # Mod Manager OMP payload staged at build time
 apps/mod-manager/omp-payload/
 omp-release.zip
+apps/mod-manager/core-mods/

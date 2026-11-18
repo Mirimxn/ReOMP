@@ -42,6 +42,7 @@ type DeployStatus =
   | { state: "failed"; title: string; details: string[] };
 type LibraryView = {
   targets: TargetView[];
+  legacy: LegacyView[];
   deploy: DeployStatus;
   ompVersion: string | null;
   libraryDir: string | null;
@@ -50,7 +51,8 @@ type LibraryView = {
   mods: ModView[];
   invalid: { file: string; reason: string }[];
 };
-type Outcome = { ok: boolean; title: string; details: string[] };
+type Outcome = { ok: boolean; title: string; details: string[]; offer?: string };
+type LegacyView = { id: string; name: string; folder: string };
 
 function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => void }) {
   const newest = mod.versions[0]?.version;
@@ -240,6 +242,15 @@ function App() {
               <li key={d}>{d}</li>
             ))}
           </ul>
+          {outcome.offer && (
+            <button
+              onClick={() =>
+                invoke<Outcome>("set_enabled", { id: outcome.offer, enabled: true, withDependencies: true }).then(showOutcome)
+              }
+            >
+              Enable {library.mods.find((m) => m.id === outcome.offer)?.name ?? outcome.offer} and the mods it needs
+            </button>
+          )}
           <button className="dismiss" onClick={() => setOutcome(null)}>
             Dismiss
           </button>
@@ -264,6 +275,30 @@ function App() {
             <ModRow key={m.id} mod={m} onOutcome={showOutcome} />
           ))}
         </ul>
+      )}
+
+      {library.legacy.length > 0 && (
+        <section>
+          <h2>Old mods</h2>
+          <p className="hint">
+            These were in your game's <code>mods</code> folder before ReOMP. Add one to the library to use it again; a missing
+            version is set to 0.1.0.
+          </p>
+          <ul className="mods">
+            {library.legacy.map((m) => (
+              <li key={m.folder} className="target">
+                <span className="mod-name">{m.name}</span>
+                <span className="mod-id">{m.id}</span>
+                <button
+                  disabled={busy}
+                  onClick={() => runImport(() => invoke<Outcome>("add_legacy_mod", { folder: m.folder }))}
+                >
+                  Add to library
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {library.invalid.length > 0 && (

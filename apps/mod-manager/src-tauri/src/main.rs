@@ -3,6 +3,7 @@
 mod commands;
 mod deploy;
 mod deployer;
+mod legacy;
 mod library;
 mod package;
 mod resolve;
@@ -31,6 +32,7 @@ fn main() {
             commands::pick_game_folder,
             commands::set_target_enabled,
             commands::retry_deploy,
+            commands::add_legacy_mod,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the ReOMP Mod Manager");

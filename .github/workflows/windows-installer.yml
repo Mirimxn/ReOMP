@@ -72,7 +72,7 @@ jobs:
         working-directory: .
         run: |
           $sha = (git rev-parse --short HEAD).Trim()
-          ./scripts/stage-manager-payload.ps1 -ReleaseZip omp-release.zip -OutDir apps/mod-manager/omp-payload -Version "${{ steps.version.outputs.version }}+$sha"
+          ./scripts/stage-manager-payload.ps1 -ReleaseZip omp-release.zip -OutDir apps/mod-manager/omp-payload -CoreModsOut apps/mod-manager/core-mods -Version "${{ steps.version.outputs.version }}+$sha"
 
       - name: Install dependencies
         run: |

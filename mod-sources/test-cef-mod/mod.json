@@ -1,5 +1,6 @@
 {
   "name": "Test Cef Mod",
+  "version": "0.1.0",
   "actions": [
     {
       "typeId": "register-scripting-module-action",
@@ -11,19 +12,24 @@
   ],
   "dependencies": [
     {
-      "id": "c-func-hook1"
+      "id": "c-func-hook1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "c-api1"
+      "id": "c-api1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "input-hook1"
+      "id": "input-hook1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "overlay1"
+      "id": "overlay1",
+      "minVersion": "0.1.0"
     },
     {
-      "id": "v1"
+      "id": "v1",
+      "minVersion": "0.1.0"
     }
   ],
   "description": "Development example for game hooks, entities and a CEF overlay."
