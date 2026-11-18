@@ -1,0 +1,101 @@
+# Builds the ReOMP Mod Manager Windows setup executable.
+# See plans/installer.md#windows for the build steps this follows.
+#
+# - Every push to main and every pull request: builds the installer and
+#   attaches it to the workflow run (Actions tab -> run -> Artifacts).
+# - Pushing a tag such as v0.1.0: also publishes it on the Releases page.
+#   The tag must match "version" in apps/mod-manager/src-tauri/tauri.conf.json.
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: apps/mod-manager
+    env:
+      RUSTUP_TOOLCHAIN: "1.95.0"
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: apps/mod-manager/package-lock.json
+
+      - name: Install Rust 1.95.0
+        run: rustup toolchain install 1.95.0 --profile minimal --target x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mod-manager/src-tauri -> target
+
+      - name: Read app version
+        id: version
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if (-not $version) { throw "No version in src-tauri/tauri.conf.json" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match app version v$version"
+          }
+
+      - name: Install dependencies
+        run: |
+          npm.cmd ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build setup executable
+        run: |
+          npm.cmd run tauri build -- --ci --target x86_64-pc-windows-msvc --bundles nsis -- --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Name the setup executable
+        run: |
+          $setups = @(Get-ChildItem src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe)
+          if ($setups.Count -ne 1) { throw "Expected one setup executable, found $($setups.Count)" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item $setups[0].FullName "out/ReOMP-${{ steps.version.outputs.version }}-windows-x64-setup.exe"
+          Get-ChildItem out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ReOMP-${{ steps.version.outputs.version }}-windows-x64-setup
+          path: apps/mod-manager/out/*.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ReOMP-${{ needs.build.outputs.version }}-windows-x64-setup
+          path: out
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: ReOMP ${{ github.ref_name }}
+          files: out/*.exe
+          fail_on_unmatched_files: true
