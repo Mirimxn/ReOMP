@@ -4,6 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ReOMP Mod Manager</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; font-size: 15px; }
+      body { margin: 0; }
+      .app { padding: 1.25rem 1.5rem; min-height: 100vh; box-sizing: border-box; position: relative; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+      h1 { margin: 0; font-size: 1.5rem; }
+      h2 { font-size: 1.05rem; margin-top: 1.5rem; }
+      button, select { font: inherit; padding: 0.35rem 0.75rem; border-radius: 6px; }
+      .hint, .empty { opacity: 0.75; }
+      code { font-size: 0.85em; overflow-wrap: anywhere; }
+      .banner { position: relative; margin: 0.75rem 0; padding: 0.6rem 0.9rem; border-radius: 8px; border: 1px solid; }
+      .banner ul { margin: 0.35rem 0 0; padding-left: 1.2rem; }
+      .banner.error { border-color: #c0392b; background: color-mix(in srgb, #c0392b 12%, transparent); }
+      .banner.info { border-color: #2e86c1; background: color-mix(in srgb, #2e86c1 12%, transparent); }
+      .banner .dismiss { position: absolute; top: 0.4rem; right: 0.5rem; padding: 0.1rem 0.5rem; }
+      .mods, .invalid { list-style: none; padding: 0; margin: 0; }
+      .mod { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 0.25rem 1rem;
+             padding: 0.7rem 0.4rem; border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent); }
+      .mod .toggle { display: flex; align-items: center; gap: 0.6rem; font-weight: 600; }
+      .mod-id { opacity: 0.6; font-size: 0.85em; }
+      .mod-description, .problem { grid-column: 1 / -1; margin: 0; padding-left: 1.75rem; }
+      .mod-description { opacity: 0.8; }
+      .problem { color: #e74c3c; }
+      .invalid li { padding: 0.3rem 0; }
+      .drop-overlay { position: fixed; inset: 0.75rem; display: grid; place-items: center; font-size: 1.3rem;
+                      border: 3px dashed #2e86c1; border-radius: 12px; background: color-mix(in srgb, #2e86c1 15%, Canvas);
+                      pointer-events: none; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

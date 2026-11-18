@@ -13,13 +13,18 @@
     "windows": [
       {
         "title": "ReOMP Mod Manager",
-        "width": 800,
-        "height": 600
+        "width": 1000,
+        "height": 700,
+        "label": "main"
       }
-    ]
+    ],
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": false,
-    "icon": ["icons/icon.ico", "icons/icon.png"]
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ]
   }
 }

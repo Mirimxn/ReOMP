@@ -1,0 +1,69 @@
+# Checks the Mod Manager: frontend type check and build, then the Rust tests.
+# On pushes to a work branch, an out-of-date Cargo.lock is refreshed and
+# committed back to that branch, because authoring sessions may not be able
+# to download crates. Pull requests and main always build with --locked.
+name: Mod Manager checks
+
+on:
+  push:
+    branches-ignore: [main]
+    paths: ["apps/mod-manager/**", ".github/workflows/mod-manager-checks.yml"]
+  pull_request:
+    paths: ["apps/mod-manager/**", ".github/workflows/mod-manager-checks.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: mod-manager-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: apps/mod-manager
+    env:
+      RUSTUP_TOOLCHAIN: "1.95.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.18.0"
+          cache: npm
+          cache-dependency-path: apps/mod-manager/package-lock.json
+
+      - name: Install Rust 1.95.0
+        run: rustup toolchain install 1.95.0 --profile minimal --target x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mod-manager/src-tauri -> target
+
+      - name: Build the frontend
+        run: |
+          npm.cmd ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm.cmd run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Rust tests
+        run: |
+          $locked = if ($env:GITHUB_EVENT_NAME -eq 'push') { @() } else { @('--locked') }
+          cargo test @locked --manifest-path src-tauri/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Commit refreshed Cargo.lock
+        if: github.event_name == 'push'
+        run: |
+          git diff --quiet -- src-tauri/Cargo.lock
+          if ($LASTEXITCODE -eq 0) { "Cargo.lock is up to date"; exit 0 }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src-tauri/Cargo.lock
+          git commit -m "Update Mod Manager Cargo.lock"
+          git push origin "HEAD:$env:GITHUB_REF_NAME"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
