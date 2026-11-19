@@ -187,11 +187,183 @@ function TargetRow({ target, onOutcome }: { target: TargetView; onOutcome: (o: O
   );
 }
 
+type AssetItem = { path: string; source: number; sourceName: string; size: number };
+type AssetListing = { folders: string[]; files: AssetItem[]; more: boolean };
+type AssetSummary = { gameDir: string; archives: [string, number][]; archiveErrors: string[]; loose: number; total: number };
+
+const formatSize = (n: number) =>
+  n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
+const itemKey = (i: AssetItem) => `${i.source}:${i.path}`;
+
+function GameFiles({ targets }: { targets: TargetView[] }) {
+  const available = targets.filter((t) => t.path);
+  const [kind, setKind] = useState(available[0]?.kind ?? "steam");
+  const [summary, setSummary] = useState<AssetSummary | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [folder, setFolder] = useState("");
+  const [query, setQuery] = useState("");
+  const [listing, setListing] = useState<AssetListing | null>(null);
+  const [selected, setSelected] = useState<Map<string, AssetItem>>(new Map());
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [extracting, setExtracting] = useState(false);
+
+  const open = (k: string) => {
+    setOpening(true);
+    setError(null);
+    setSummary(null);
+    setSelected(new Map());
+    invoke<AssetSummary>("assets_open", { kind: k })
+      .then((s) => {
+        setSummary(s);
+        setFolder("");
+        setQuery("");
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setOpening(false));
+  };
+
+  useEffect(() => {
+    if (!summary) return;
+    const q = query.trim();
+    const request = q
+      ? invoke<AssetListing>("assets_search", { query: q, folder })
+      : invoke<AssetListing>("assets_list", { folder });
+    let current = true;
+    request.then((l) => current && setListing(l)).catch((e) => current && setError(String(e)));
+    return () => {
+      current = false;
+    };
+  }, [summary, folder, query]);
+
+  const toggle = (item: AssetItem) =>
+    setSelected((old) => {
+      const next = new Map(old);
+      if (next.has(itemKey(item))) next.delete(itemKey(item));
+      else next.set(itemKey(item), item);
+      return next;
+    });
+
+  const extract = () => {
+    setExtracting(true);
+    const items = [...selected.values()].map((i) => ({ path: i.path, source: i.source }));
+    invoke<Outcome>("assets_extract", { items })
+      .then((o) => setOutcome(o.ok && o.details.length === 0 ? null : o))
+      .finally(() => setExtracting(false));
+  };
+
+  const crumbs = folder ? folder.split("/") : [];
+
+  if (available.length === 0) {
+    return <p className="empty">Choose your game folder in the Mods tab first.</p>;
+  }
+
+  return (
+    <section>
+      <div className="toolbar">
+        {available.length > 1 && (
+          <select value={kind} onChange={(e) => setKind(e.target.value as TargetView["kind"])} aria-label="Game">
+            {available.map((t) => (
+              <option key={t.kind} value={t.kind}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        )}
+        <button disabled={opening} onClick={() => open(kind)}>
+          {opening ? "Reading the game files…" : summary ? "Reload" : "Open game files"}
+        </button>
+        {summary && (
+          <span className="hint">
+            {summary.total.toLocaleString()} files · {summary.archives.length} archives · {summary.loose.toLocaleString()} loose
+          </span>
+        )}
+      </div>
+      {error && <div className="banner error">{error}</div>}
+      {summary && summary.archiveErrors.length > 0 && (
+        <div className="banner error">
+          <strong>Some archives couldn't be read:</strong>
+          <ul>
+            {summary.archiveErrors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {outcome && (
+        <div className={`banner ${outcome.ok ? "info" : "error"}`}>
+          {outcome.title && <strong>{outcome.title}</strong>}
+          <ul>
+            {outcome.details.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+          <button className="dismiss" onClick={() => setOutcome(null)}>
+            Dismiss
+          </button>
+        </div>
+      )}
+      {summary && listing && (
+        <>
+          <div className="toolbar">
+            <input
+              className="search"
+              type="search"
+              placeholder={folder ? `Search in ${folder}` : "Search all game files, e.g. clonetrooper .ghg"}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <button disabled={selected.size === 0 || extracting} onClick={extract}>
+              {extracting ? "Extracting…" : `Extract ${selected.size || ""} selected…`}
+            </button>
+            {selected.size > 0 && <button onClick={() => setSelected(new Map())}>Clear</button>}
+          </div>
+          <nav className="crumbs">
+            <button className="link" onClick={() => setFolder("")}>
+              Game
+            </button>
+            {crumbs.map((c, i) => (
+              <span key={i}>
+                {" / "}
+                <button className="link" onClick={() => setFolder(crumbs.slice(0, i + 1).join("/"))}>
+                  {c}
+                </button>
+              </span>
+            ))}
+          </nav>
+          <ul className="assets">
+            {listing.folders.map((f) => (
+              <li key={`d:${f}`} className="asset folder">
+                <button className="link" onClick={() => setFolder(folder ? `${folder}/${f}` : f)}>
+                  📁 {f}
+                </button>
+              </li>
+            ))}
+            {listing.files.map((item) => (
+              <li key={itemKey(item)} className="asset">
+                <label>
+                  <input type="checkbox" checked={selected.has(itemKey(item))} onChange={() => toggle(item)} />
+                  <span className="asset-path">{query ? item.path : item.path.split("/").pop()}</span>
+                </label>
+                <span className="asset-source">{item.sourceName}</span>
+                <span className="asset-size">{formatSize(item.size)}</span>
+              </li>
+            ))}
+            {listing.folders.length === 0 && listing.files.length === 0 && <li className="empty">Nothing here.</li>}
+          </ul>
+          {listing.more && <p className="hint">Showing the first {listing.files.length} files. Search to narrow it down.</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [library, setLibrary] = useState<LibraryView | null>(null);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"mods" | "files">("mods");
 
   const refresh = useCallback(() => {
     invoke<LibraryView>("get_library").then(setLibrary);
@@ -233,11 +405,25 @@ function App() {
     <main className={`app${dragging ? " dragging" : ""}`}>
       <header>
         <h1>ReOMP Mod Manager</h1>
-        <button disabled={busy || !library.libraryDir} onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}>
-          {busy ? "Adding…" : "Add mod ZIPs…"}
-        </button>
+        <nav className="tabs">
+          <button className={tab === "mods" ? "active" : ""} onClick={() => setTab("mods")}>
+            Mods
+          </button>
+          <button className={tab === "files" ? "active" : ""} onClick={() => setTab("files")}>
+            Game files
+          </button>
+        </nav>
+        {tab === "mods" ? (
+          <button disabled={busy || !library.libraryDir} onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}>
+            {busy ? "Adding…" : "Add mod ZIPs…"}
+          </button>
+        ) : (
+          <span />
+        )}
       </header>
 
+      {tab === "files" && <GameFiles targets={library.targets} />}
+      <div hidden={tab !== "mods"}>
       <section>
         <h2>Game</h2>
         <p className="hint">
@@ -339,6 +525,7 @@ function App() {
           </ul>
         </section>
       )}
+      </div>
       {dragging && <div className="drop-overlay">Drop mod ZIPs to add them</div>}
     </main>
   );

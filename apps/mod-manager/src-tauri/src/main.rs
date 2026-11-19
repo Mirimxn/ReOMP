@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod assets;
 mod commands;
+mod dat;
 mod deploy;
 mod deployer;
 mod legacy;
@@ -18,6 +20,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::AppState::default())
+        .manage(commands::AssetState::default())
         .setup(|app| {
             commands::init(app.handle());
             Ok(())
@@ -34,6 +37,10 @@ fn main() {
             commands::retry_deploy,
             commands::add_legacy_mod,
             commands::remove_version,
+            commands::assets_open,
+            commands::assets_list,
+            commands::assets_search,
+            commands::assets_extract,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the ReOMP Mod Manager");
