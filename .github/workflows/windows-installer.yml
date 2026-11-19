@@ -74,6 +74,12 @@ jobs:
           $sha = (git rev-parse --short HEAD).Trim()
           ./scripts/stage-manager-payload.ps1 -ReleaseZip omp-release.zip -OutDir apps/mod-manager/omp-payload -CoreModsOut apps/mod-manager/core-mods -Version "${{ steps.version.outputs.version }}+$sha"
 
+      - name: Fetch the default mods
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/fetch-bundled-mods.ps1 -OutDir apps/mod-manager/default-mods
+
       - name: Install dependencies
         run: |
           npm.cmd ci

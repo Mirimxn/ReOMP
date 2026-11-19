@@ -4,3 +4,4 @@ src-tauri/target/
 src-tauri/gen/
 omp-payload/
 core-mods/
+default-mods/

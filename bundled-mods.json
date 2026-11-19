@@ -1,0 +1,18 @@
+{
+  "$comment": "Mod ZIPs bundled into the Mod Manager and enabled by default on first import. The ZIPs are assets of the GitHub release named in 'release'; the installer workflows download them and check each SHA-256. To change one, upload the new ZIP to a new release and update this file.",
+  "release": "bundled-mods-1",
+  "mods": [
+    {
+      "file": "Invasion-0.1.0.zip",
+      "sha256": "f3213fabf56c5d51492ffe310806be0f68f37ee3bd01ea705dbe4bb3056cabb3",
+      "author": "Witcher",
+      "note": "Included with permission."
+    },
+    {
+      "file": "noclip-0.1.0.zip",
+      "sha256": "14b786aa79d711e1b62fdada0827a394af34c7d1b11569efa3bd4d0000c2b4dc",
+      "author": "Witcher",
+      "note": "Included with permission."
+    }
+  ]
+}

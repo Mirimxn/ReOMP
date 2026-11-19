@@ -374,30 +374,48 @@ pub fn init(app: &AppHandle) {
     }
 }
 
-/// Adds core mod ZIPs shipped with this build that the library hasn't been
-/// offered yet, through the normal import checks.
+/// Adds mod ZIPs shipped with this build that the library hasn't been
+/// offered yet, through the normal import checks. Core mods are only added;
+/// default mods are also enabled, with the mods they need, when first added.
 fn import_bundled(app: &AppHandle, core: &mut Core) {
-    let Ok(dir) = app.path().resource_dir().map(|d| d.join("core-mods")) else { return };
-    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let Ok(resources) = app.path().resource_dir() else { return };
+    import_bundled_from(core, &resources.join("core-mods"), &resources.join("default-mods"));
+}
+
+fn import_bundled_from(core: &mut Core, core_dir: &std::path::Path, default_dir: &std::path::Path) {
     let Some(library_dir) = core.library_dir.clone() else { return };
     let mut offered = false;
-    for path in entries.flatten().map(|e| e.path()) {
-        let Ok(info) = crate::package::read_package(&path) else { continue };
-        core.bundled_ids.insert(info.id.clone());
-        let key = format!("{}@{}", info.id, info.manifest.version);
-        if core.state.bundled_imported.contains(&key) {
-            continue;
-        }
-        if library::import(&library_dir, &core.library, &[path]).is_ok() {
-            core.state.bundled_imported.insert(key);
-            offered = true;
-            core.rescan();
+    let mut to_enable = Vec::new();
+    for (dir, enable) in [(core_dir, false), (default_dir, true)] {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+        paths.sort();
+        for path in paths {
+            let Ok(info) = crate::package::read_package(&path) else { continue };
+            core.bundled_ids.insert(info.id.clone());
+            let key = format!("{}@{}", info.id, info.manifest.version);
+            if core.state.bundled_imported.contains(&key) {
+                continue;
+            }
+            if library::import(&library_dir, &core.library, &[path]).is_ok() {
+                core.state.bundled_imported.insert(key);
+                offered = true;
+                core.rescan();
+                if enable {
+                    to_enable.push(info.id);
+                }
+            }
         }
     }
     if offered {
         if let Some(file) = &core.state_file {
             let _ = settings::save_state(file, &core.state);
         }
+    }
+    for id in to_enable {
+        let needed = core.with_dependencies(&id);
+        // Skipped, not forced, if it would break the current selection.
+        let _ = core.change(|s| s.enabled.extend(needed));
     }
 }
 
@@ -667,6 +685,31 @@ mod tests {
         core.state.enabled = enabled.iter().map(|s| s.to_string()).collect();
         core.rescan();
         core
+    }
+
+    #[test]
+    fn bundled_default_mods_are_added_and_enabled_once() {
+        let root = temp_dir("bundled");
+        let (library, core_dir, default_dir) = (root.join("library"), root.join("core"), root.join("default"));
+        for dir in [&library, &core_dir, &default_dir] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        write_mod(&core_dir, "v1.zip", "v1", "0.1.0", &[("c-api1", "0.1.0")], "x");
+        write_mod(&core_dir, "c-api1.zip", "c-api1", "0.1.0", &[], "x");
+        write_mod(&core_dir, "unused.zip", "unused", "0.1.0", &[], "x");
+        write_mod(&default_dir, "Invasion.zip", "Invasion", "0.1.0", &[("v1", "0.0.0")], "x");
+        let mut core = core_with(&library, &[]);
+        core.state_file = Some(root.join("state.json"));
+
+        import_bundled_from(&mut core, &core_dir, &default_dir);
+        assert_eq!(core.library.packages.len(), 4);
+        let enabled: Vec<&str> = core.state.enabled.iter().map(String::as_str).collect();
+        assert_eq!(enabled, vec!["Invasion", "c-api1", "v1"]);
+
+        // The player turns it off; a restart doesn't turn it back on.
+        core.state.enabled.remove("Invasion");
+        import_bundled_from(&mut core, &core_dir, &default_dir);
+        assert!(!core.state.enabled.contains("Invasion"));
     }
 
     #[test]
