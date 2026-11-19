@@ -162,6 +162,9 @@ pub struct Deployment {
     tidy: Vec<(PathBuf, PathBuf)>,
     #[cfg(test)]
     pub fail_at_move: Option<usize>,
+    /// Folders that behave as if another program holds them open.
+    #[cfg(test)]
+    pub locked_dirs: Vec<PathBuf>,
 }
 
 impl Deployment {
@@ -188,6 +191,8 @@ impl Deployment {
             tidy: Vec::new(),
             #[cfg(test)]
             fail_at_move: None,
+            #[cfg(test)]
+            locked_dirs: Vec::new(),
         };
         let id = deployment.id.clone();
         deployment.write(&Entry::Begin { id })?;
@@ -229,9 +234,44 @@ impl Deployment {
         if self.fail_at_move == Some(self.moves.len()) {
             return Err(format!("Injected failure moving {}", from.display()));
         }
+        let is_dir = from.is_dir();
         self.write(&Entry::Move { from: from.to_path_buf(), to: to.to_path_buf() })?;
-        rename_with_retry(from, to)?;
-        self.moves.push((from.to_path_buf(), to.to_path_buf()));
+        // A folder that another program watches (File Explorer does this for
+        // folders it has shown) can't be renamed, but its contents can be moved.
+        let attempts = if is_dir { 1 } else { 7 };
+        #[cfg(test)]
+        let result = if self.locked_dirs.iter().any(|d| d == from) {
+            Err(io::Error::from(io::ErrorKind::PermissionDenied))
+        } else {
+            rename_with_retry(from, to, attempts)
+        };
+        #[cfg(not(test))]
+        let result = rename_with_retry(from, to, attempts);
+        match result {
+            Ok(()) => {
+                self.moves.push((from.to_path_buf(), to.to_path_buf()));
+                Ok(())
+            }
+            Err(e) if is_dir && is_in_use(&e) => self.move_children(from, to),
+            Err(e) => Err(describe_move_error(from, to, &e)),
+        }
+    }
+
+    /// Moves a folder's contents one by one and leaves the emptied folder.
+    /// Undo moves them back, recreating the folder if it was removed.
+    fn move_children(&mut self, from: &Path, to: &Path) -> Result<(), String> {
+        self.mkdir_all(to)?;
+        let mut children: Vec<PathBuf> = fs::read_dir(from)
+            .map_err(|e| format!("Can't read {}: {e}", from.display()))?
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        children.sort();
+        for child in children {
+            let name = child.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+            self.move_path(&child, &to.join(name))?;
+        }
+        let _ = fs::remove_dir(from);
         Ok(())
     }
 
@@ -423,23 +463,27 @@ impl Deployment {
 
 /// Windows refuses to rename a folder while any program has a file inside it
 /// open (error 5 or 32). Antivirus scans release them quickly, so retry briefly.
-fn rename_with_retry(from: &Path, to: &Path) -> Result<(), String> {
-    let mut attempt: u64 = 0;
+fn rename_with_retry(from: &Path, to: &Path, attempts: u64) -> io::Result<()> {
+    let mut attempt: u64 = 1;
     loop {
         match fs::rename(from, to) {
-            Ok(()) => return Ok(()),
-            Err(e) if attempt < 6 && is_in_use(&e) => {
-                attempt += 1;
+            Err(e) if attempt < attempts && is_in_use(&e) => {
                 std::thread::sleep(std::time::Duration::from_millis(250 * attempt));
+                attempt += 1;
             }
-            Err(e) if is_in_use(&e) => {
-                return Err(format!(
-                    "Windows wouldn't let the Mod Manager move {}. Another program is probably using it or something inside it. Close any File Explorer window showing that folder and any tool with its files open, then press Retry. ({e})",
-                    from.display()
-                ));
-            }
-            Err(e) => return Err(format!("Can't move {} to {}: {e}", from.display(), to.display())),
+            result => return result,
         }
+    }
+}
+
+fn describe_move_error(from: &Path, to: &Path, error: &io::Error) -> String {
+    if is_in_use(error) {
+        format!(
+            "Windows wouldn't let the Mod Manager move {}. Another program has it open. Close that program (for example a modding tool or a text editor), then press Retry. ({error})",
+            from.display()
+        )
+    } else {
+        format!("Can't move {} to {}: {error}", from.display(), to.display())
     }
 }
 
@@ -701,6 +745,60 @@ mod tests {
         assert_eq!(fs::read(dir.join("dinput8.dll")).unwrap(), b"proxy");
         assert!(!dir.join("omp-lswtss-runtime-engine-0.0.0").exists(), "older OMP folders are replaced");
         assert_eq!(receipt.legacy_backups.len(), 1);
+        assert!(dir.join(&receipt.legacy_backups[0]).join("gunship/mod.json").is_file());
+    }
+
+    #[test]
+    fn moves_a_held_mods_folder_by_its_contents() {
+        let f = fixture("deploy-held");
+        let dir = game(&f.root, "game");
+        fs::write(dir.join("dinput8.dll"), b"old proxy").unwrap();
+        fs::write(dir.join("omp-lswtss-driver.dll"), b"old driver").unwrap();
+        fs::create_dir_all(dir.join("mods/gunship/icons")).unwrap();
+        fs::write(dir.join("mods/gunship/mod.json"), b"{}").unwrap();
+        fs::write(dir.join("mods/gunship/icons/i.png"), b"png").unwrap();
+        let before = snapshot(&dir);
+
+        // A failure after the contents moved rolls back to the same files.
+        let mods = vec![deploy_mod(&f.root, "a", "1.0.0", "x")];
+        let mut d = Deployment::begin(&f.journal).unwrap();
+        d.locked_dirs = vec![dir.join("mods")];
+        d.fail_at_move = Some(6);
+        assert!(d.apply(&plan(&dir, Some((&f.payload, &mods)), None)).is_err());
+        d.rollback().unwrap();
+        assert_eq!(snapshot(&dir), before);
+
+        let mut d = Deployment::begin(&f.journal).unwrap();
+        d.locked_dirs = vec![dir.join("mods")];
+        let receipt = d.apply(&plan(&dir, Some((&f.payload, &mods)), None)).unwrap().unwrap();
+        d.commit(BTreeMap::new(), |_| Ok(())).unwrap();
+        let backup = dir.join(&receipt.legacy_backups[0]);
+        assert!(backup.join("gunship/icons/i.png").is_file());
+        assert!(dir.join("mods/a/mod.json").is_file());
+        assert!(!dir.join("mods/gunship").exists());
+    }
+
+    /// Holds a real Windows handle on the folder, like File Explorer does.
+    #[cfg(windows)]
+    #[test]
+    fn moves_a_mods_folder_another_program_holds_open() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        const FILE_SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+        let f = fixture("deploy-held-windows");
+        let dir = game(&f.root, "game");
+        fs::write(dir.join("omp-lswtss-driver.dll"), b"old driver").unwrap();
+        fs::create_dir_all(dir.join("mods/gunship")).unwrap();
+        fs::write(dir.join("mods/gunship/mod.json"), b"{}").unwrap();
+        let _held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(dir.join("mods"))
+            .unwrap();
+        assert!(fs::rename(dir.join("mods"), dir.join("renamed")).is_err(), "the handle blocks a rename");
+
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, &[])), None)]).unwrap().remove(0).unwrap();
         assert!(dir.join(&receipt.legacy_backups[0]).join("gunship/mod.json").is_file());
     }
 
