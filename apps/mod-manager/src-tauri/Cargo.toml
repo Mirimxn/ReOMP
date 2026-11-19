@@ -18,3 +18,4 @@ sysinfo = { version = "0.35", default-features = false, features = ["system"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+libloading = "0.8"

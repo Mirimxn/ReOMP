@@ -675,6 +675,137 @@ pub async fn remove_version(app: AppHandle, state: State<'_, AppState>, id: Stri
     Ok(outcome)
 }
 
+/// The game file index, kept apart from `Core` so building it never blocks the rest of the app.
+#[derive(Default)]
+pub struct AssetState(pub Mutex<Option<std::sync::Arc<crate::assets::AssetIndex>>>);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetSummary {
+    game_dir: String,
+    archives: Vec<(String, usize)>,
+    archive_errors: Vec<String>,
+    loose: usize,
+    total: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetListing {
+    folders: Vec<String>,
+    files: Vec<crate::assets::ItemView>,
+    more: bool,
+}
+
+fn asset_index(app: &AppHandle) -> Result<std::sync::Arc<crate::assets::AssetIndex>, String> {
+    app.state::<AssetState>()
+        .0
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .ok_or_else(|| "Open a game folder first.".to_string())
+}
+
+/// Builds (or reuses) the index for a target's game folder.
+#[tauri::command]
+pub async fn assets_open(app: AppHandle, kind: TargetKind) -> Result<AssetSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = {
+            let state = app.state::<AppState>();
+            let core = lock(&state);
+            core.state.targets.get(&kind).and_then(|t| t.path.clone())
+        };
+        let path = path.ok_or_else(|| format!("Choose the {} game folder in the Mods tab first.", kind.label()))?;
+        let game_dir = targets::validate_game_dir(&path)?;
+        let cached = app.state::<AssetState>().0.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        let index = match cached {
+            Some(index) if index.is_current(&game_dir) => index,
+            _ => {
+                let built = std::sync::Arc::new(crate::assets::AssetIndex::build(&game_dir));
+                *app.state::<AssetState>().0.lock().unwrap_or_else(|p| p.into_inner()) = Some(built.clone());
+                built
+            }
+        };
+        let loose = index.items.iter().filter(|i| i.source == crate::assets::LOOSE).count();
+        Ok(AssetSummary {
+            game_dir: index.game_dir.display().to_string(),
+            archives: index
+                .archives
+                .iter()
+                .map(|a| (a.file.file_name().unwrap_or_default().to_string_lossy().into_owned(), a.entries.len()))
+                .collect(),
+            archive_errors: index.archive_errors.clone(),
+            loose,
+            total: index.items.len(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn assets_list(app: AppHandle, folder: String) -> Result<AssetListing, String> {
+    let index = asset_index(&app)?;
+    let (folders, files, more) = index.list(&folder, 2000);
+    Ok(AssetListing { folders, files: files.into_iter().map(|i| crate::assets::ItemView::of(&index, i)).collect(), more })
+}
+
+#[tauri::command]
+pub async fn assets_search(app: AppHandle, query: String, folder: String) -> Result<AssetListing, String> {
+    let index = asset_index(&app)?;
+    let (files, more) = index.search(&query, &folder, 1000);
+    Ok(AssetListing { folders: Vec::new(), files: files.into_iter().map(|i| crate::assets::ItemView::of(&index, i)).collect(), more })
+}
+
+#[derive(serde::Deserialize)]
+pub struct AssetRef {
+    path: String,
+    source: u32,
+}
+
+/// Extracts the chosen files to a folder the player picks, keeping their game paths.
+#[tauri::command]
+pub async fn assets_extract(app: AppHandle, items: Vec<AssetRef>) -> Result<Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let index = match asset_index(&app) {
+            Ok(index) => index,
+            Err(e) => return Outcome::rejected(&e, None::<String>),
+        };
+        let Some(picked) = app.dialog().file().set_title("Choose where to extract the files").blocking_pick_folder() else {
+            return Outcome::ok(Vec::new());
+        };
+        let dest = match picked.into_path() {
+            Ok(dest) => dest,
+            Err(e) => return Outcome::rejected("Can't use that folder:", Some(e.to_string())),
+        };
+        if targets::same_dir(&dest, &index.game_dir) || dest.starts_with(&index.game_dir) {
+            return Outcome::rejected("Choose a folder outside the game folder, so the game's files stay untouched.", None::<String>);
+        }
+        let codecs = crate::assets::GameCodecs::for_game(&index.game_dir);
+        let (mut done, mut failed) = (0usize, Vec::new());
+        for wanted in &items {
+            match index.find(&wanted.path, wanted.source) {
+                Some(item) => match index.extract(item, &dest, &codecs) {
+                    Ok(_) => done += 1,
+                    Err(e) => failed.push(format!("{} ({}): {e}", item.path, index.source_name(item.source))),
+                },
+                None => failed.push(format!("{}: no longer in the game files", wanted.path)),
+            }
+        }
+        if failed.is_empty() {
+            Outcome::ok(vec![format!("Extracted {done} file{} to {}", if done == 1 { "" } else { "s" }, dest.display())])
+        } else {
+            let mut details = failed;
+            if done > 0 {
+                details.insert(0, format!("{done} other file{} extracted to {}", if done == 1 { " was" } else { "s were" }, dest.display()));
+            }
+            Outcome::rejected("Some files couldn't be extracted:", details)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
