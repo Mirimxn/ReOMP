@@ -195,6 +195,75 @@ const formatSize = (n: number) =>
   n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
 const itemKey = (i: AssetItem) => `${i.source}:${i.path}`;
 
+type DraftFile = { gamePath: string; file: string };
+type Draft = { name: string; version: string; description: string; files: DraftFile[] };
+const emptyDraft: Draft = { name: "", version: "1.0.0", description: "", files: [] };
+
+function DraftPanel({
+  draft,
+  setDraft,
+  onOutcome,
+}: {
+  draft: Draft;
+  setDraft: (d: Draft) => void;
+  onOutcome: (o: Outcome) => void;
+}) {
+  const [building, setBuilding] = useState(false);
+  const build = (toLibrary: boolean) => {
+    setBuilding(true);
+    invoke<Outcome>("draft_build", { draft, toLibrary })
+      .then(onOutcome)
+      .finally(() => setBuilding(false));
+  };
+  return (
+    <div className="draft">
+      <h3>New replacement mod</h3>
+      <div className="draft-fields">
+        <label>
+          Name
+          <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Red clone troopers" />
+        </label>
+        <label>
+          Version
+          <input value={draft.version} onChange={(e) => setDraft({ ...draft, version: e.target.value })} />
+        </label>
+        <label className="wide">
+          Description (optional)
+          <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+        </label>
+      </div>
+      <ul className="assets">
+        {draft.files.map((f) => (
+          <li key={f.gamePath} className="asset">
+            <span className="asset-path">{f.gamePath}</span>
+            <span className="asset-source" title={f.file}>
+              ← {f.file.split(/[\\/]/).pop()}
+            </span>
+            <button className="link" onClick={() => setDraft({ ...draft, files: draft.files.filter((x) => x !== f) })}>
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="hint">
+        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's v1 mod and only replaces files inside the game's
+        archives.
+      </p>
+      <div className="toolbar">
+        <button disabled={building || draft.files.length === 0} onClick={() => build(true)}>
+          Add to library
+        </button>
+        <button disabled={building || draft.files.length === 0} onClick={() => build(false)}>
+          Export ZIP…
+        </button>
+        <button disabled={building} onClick={() => setDraft(emptyDraft)}>
+          Discard
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function GameFiles({ targets }: { targets: TargetView[] }) {
   const available = targets.filter((t) => t.path);
   const [kind, setKind] = useState(available[0]?.kind ?? "steam");
@@ -207,6 +276,16 @@ function GameFiles({ targets }: { targets: TargetView[] }) {
   const [selected, setSelected] = useState<Map<string, AssetItem>>(new Map());
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [extracting, setExtracting] = useState(false);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
+
+  const replace = (item: AssetItem) =>
+    invoke<string | null>("draft_pick_file", { gamePath: item.path }).then((file) => {
+      if (!file) return;
+      setDraft((d) => ({
+        ...d,
+        files: [...d.files.filter((f) => f.gamePath !== item.path), { gamePath: item.path, file }],
+      }));
+    });
 
   const open = (k: string) => {
     setOpening(true);
@@ -303,6 +382,9 @@ function GameFiles({ targets }: { targets: TargetView[] }) {
           </button>
         </div>
       )}
+      {summary && draft.files.length > 0 && (
+        <DraftPanel draft={draft} setDraft={setDraft} onOutcome={(o) => setOutcome(o.ok && o.details.length === 0 ? null : o)} />
+      )}
       {summary && listing && (
         <>
           <div className="toolbar">
@@ -347,6 +429,13 @@ function GameFiles({ targets }: { targets: TargetView[] }) {
                 </label>
                 <span className="asset-source">{item.sourceName}</span>
                 <span className="asset-size">{formatSize(item.size)}</span>
+                {item.sourceName === "loose file" ? (
+                  <span />
+                ) : (
+                  <button className="replace" onClick={() => replace(item)}>
+                    Replace…
+                  </button>
+                )}
               </li>
             ))}
             {listing.folders.length === 0 && listing.files.length === 0 && <li className="empty">Nothing here.</li>}

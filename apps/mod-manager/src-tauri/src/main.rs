@@ -3,6 +3,7 @@
 mod assets;
 mod commands;
 mod dat;
+mod draft;
 mod deploy;
 mod deployer;
 mod legacy;
@@ -41,6 +42,8 @@ fn main() {
             commands::assets_list,
             commands::assets_search,
             commands::assets_extract,
+            commands::draft_pick_file,
+            commands::draft_build,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the ReOMP Mod Manager");

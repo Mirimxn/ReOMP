@@ -806,6 +806,79 @@ pub async fn assets_extract(app: AppHandle, items: Vec<AssetRef>) -> Result<Outc
     .map_err(|e| e.to_string())
 }
 
+/// Picks the player's replacement file for one game path.
+#[tauri::command]
+pub async fn draft_pick_file(app: AppHandle, game_path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let name = game_path.rsplit('/').next().unwrap_or("file").to_string();
+        app.dialog()
+            .file()
+            .set_title(format!("Choose the replacement for {name}"))
+            .blocking_pick_file()
+            .and_then(|p| p.into_path().ok())
+            .map(|p| p.display().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Turns the draft into a mod ZIP: saved where the player chooses, or added to the library.
+#[tauri::command]
+pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library: bool) -> Result<Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let index = match asset_index(&app) {
+            Ok(index) => index,
+            Err(e) => return Outcome::rejected(&e, None::<String>),
+        };
+        let problems = crate::draft::check(&draft, &index);
+        if !problems.is_empty() {
+            return Outcome::rejected("The mod isn't ready yet:", problems);
+        }
+        let file_name = format!("{}-{}.zip", crate::draft::mod_id(&draft.name), draft.version.trim());
+        if to_library {
+            let temp_dir = {
+                let state = app.state::<AppState>();
+                let core = lock(&state);
+                core.deploy.data_dir.as_ref().map(|d| d.join("tmp"))
+            };
+            let Some(temp_dir) = temp_dir else {
+                return Outcome::rejected("The mod library isn't available.", None::<String>);
+            };
+            if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+                return Outcome::rejected("Couldn't prepare the mod:", Some(e.to_string()));
+            }
+            let zip = temp_dir.join(&file_name);
+            let outcome = match crate::draft::export(&draft, &zip) {
+                Ok(_) => import_paths(&app, vec![zip.clone()]),
+                Err(e) => Outcome::rejected("Couldn't build the mod:", Some(e)),
+            };
+            let _ = std::fs::remove_file(&zip);
+            outcome
+        } else {
+            let Some(picked) = app
+                .dialog()
+                .file()
+                .set_title("Save the mod ZIP")
+                .set_file_name(&file_name)
+                .add_filter("Mod ZIP", &["zip"])
+                .blocking_save_file()
+            else {
+                return Outcome::ok(Vec::new());
+            };
+            let out = match picked.into_path() {
+                Ok(out) => out,
+                Err(e) => return Outcome::rejected("Can't save there:", Some(e.to_string())),
+            };
+            match crate::draft::export(&draft, &out) {
+                Ok(_) => Outcome::ok(vec![format!("Saved {}", out.display())]),
+                Err(e) => Outcome::rejected("Couldn't build the mod:", Some(e)),
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
