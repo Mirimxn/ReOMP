@@ -101,6 +101,24 @@ pub fn resolve(
         }
     }
 
+    // Two enabled mods can't place the same game file.
+    let mut placed: BTreeMap<String, Vec<&String>> = BTreeMap::new();
+    for (id, version) in &selection.selected {
+        for resource in &library.packages[id][version].info.manifest.resources {
+            placed.entry(resource.path.to_lowercase()).or_default().push(id);
+        }
+    }
+    for (path, owners) in placed.iter().filter(|(_, owners)| owners.len() > 1) {
+        let names: Vec<&str> = owners.iter().map(|s| s.as_str()).collect();
+        for id in owners {
+            problem(
+                problems,
+                id,
+                format!("{} both replace {}. Enable only one of them.", names.join(" and "), path.to_uppercase()),
+            );
+        }
+    }
+
     for cycle in find_cycles(library, &selection.selected) {
         let path = cycle.iter().chain(cycle.first()).cloned().collect::<Vec<_>>().join(" → ");
         for id in &cycle {
@@ -211,6 +229,26 @@ mod tests {
 
         let s = resolve(&library, &set(&["needs-gone"]), &BTreeMap::new());
         assert!(s.problems[0].message.contains("isn't in the library"), "{:?}", s.problems);
+    }
+
+    #[test]
+    fn blocks_two_mods_replacing_the_same_file() {
+        use crate::testutil::{write_zip, Entry};
+        let dir = temp_dir("resolve-assets");
+        for (id, path) in [("red", "chars/a.ghg"), ("blue", "CHARS/A.GHG"), ("other", "chars/b.ghg")] {
+            let json = format!(
+                r#"{{"name":"{id}","version":"1.0.0","dependencies":[],"actions":[{{"typeId":"v1/register-custom-resource-action","payload":{{"path":"{path}","srcPath":"f"}}}}]}}"#
+            );
+            let zip = dir.join(format!("{id}.zip"));
+            let (manifest, file) = (format!("{id}/mod.json"), format!("{id}/f"));
+            write_zip(&zip, &[Entry::File(&manifest, json.as_bytes()), Entry::File(&file, b"x")]);
+            crate::testutil::make_settled(&zip);
+        }
+        let library = scan(&dir).unwrap();
+        let s = resolve(&library, &set(&["red", "blue", "other"]), &BTreeMap::new());
+        assert_eq!(s.problems.len(), 2, "{:?}", s.problems);
+        assert!(s.problems[0].message.contains("CHARS/A.GHG"));
+        assert!(resolve(&library, &set(&["red", "other"]), &BTreeMap::new()).problems.is_empty());
     }
 
     #[test]

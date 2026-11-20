@@ -1,11 +1,11 @@
 //! Builds an asset replacement mod from files the player picks for game
 //! paths chosen in the Game files view.
 //!
-//! Until the asset-replacement provider exists (roadmap ASSET), the mod uses
-//! v1's `register-custom-resource-action`, which links the mod's file into the
-//! game folder and routes the game's lookup to it. v1 deletes a loose file at
-//! the destination first, so only paths that exist solely inside the archives
-//! can be replaced. See plans/mods/asset-replacement.md.
+//! The mod declares each file with v1's `register-custom-resource-action`.
+//! The manager places the file at its game path during deployment and sets
+//! aside any loose original until the mod no longer needs it; v1 routes the
+//! game's lookup at runtime until the asset-replacement provider takes over
+//! (roadmap ASSET). See plans/mods/asset-replacement.md.
 
 use std::collections::BTreeSet;
 use std::fs::{self, File};
@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 use zip::write::SimpleFileOptions;
 
-use crate::assets::{AssetIndex, LOOSE};
+use crate::assets::AssetIndex;
 use crate::version::Version;
 
 pub const RESOURCE_ACTION: &str = "v1/register-custom-resource-action";
@@ -73,13 +73,10 @@ pub fn check(draft: &Draft, index: &AssetIndex) -> Vec<String> {
         if !seen.insert(path.to_lowercase()) {
             problems.push(format!("{path} is replaced twice. Keep one."));
         }
-        let sources: Vec<u32> = index.items.iter().filter(|i| &i.path == path).map(|i| i.source).collect();
-        if sources.is_empty() {
+        if !index.items.iter().any(|i| &i.path == path) {
             problems.push(format!("{path} isn't one of the game's files."));
-        } else if sources.contains(&LOOSE) {
-            problems.push(format!(
-                "{path} is a loose file in the game folder. Replacing loose files needs the upcoming asset provider, so pick a file that's only inside the archives."
-            ));
+        } else if let Err(e) = crate::package::check_game_path(path) {
+            problems.push(format!("{e}."));
         }
         if !file.file.is_file() {
             problems.push(format!("The replacement for {path} ({}) can't be found.", file.file.display()));
@@ -190,18 +187,19 @@ mod tests {
     }
 
     #[test]
-    fn rejects_loose_unknown_and_duplicate_destinations() {
+    fn rejects_unknown_reserved_and_duplicate_destinations() {
         let dir = temp_dir("draft-bad");
         let a = dir.join("a");
         fs::write(&a, b"x").unwrap();
         let file = |p: &str| DraftFile { game_path: p.into(), file: a.clone() };
-        let index = index_with(&[("chars/a.ghg", 0), ("chars/loose.ghg", 0), ("chars/loose.ghg", LOOSE)]);
+        let index = index_with(&[("chars/a.ghg", 0), ("chars/loose.ghg", crate::assets::LOOSE), ("game.dat", crate::assets::LOOSE)]);
         let draft = Draft {
             name: "!!".into(),
             version: "1.0".into(),
             description: String::new(),
-            files: vec![file("chars/a.ghg"), file("chars/a.ghg"), file("chars/loose.ghg"), file("chars/missing.ghg")],
+            files: vec![file("chars/a.ghg"), file("chars/a.ghg"), file("chars/loose.ghg"), file("chars/missing.ghg"), file("game.dat")],
         };
+        // Name, version, the duplicate, the unknown path and the reserved archive; the loose file is fine.
         let problems = check(&draft, &index);
         assert_eq!(problems.len(), 5, "{problems:?}");
     }

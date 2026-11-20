@@ -246,8 +246,8 @@ function DraftPanel({
         ))}
       </ul>
       <p className="hint">
-        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's v1 mod and only replaces files inside the game's
-        archives.
+        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's v1 mod. When it's turned off, the game's own files
+        come back.
       </p>
       <div className="toolbar">
         <button disabled={building || draft.files.length === 0} onClick={() => build(true)}>
@@ -429,13 +429,9 @@ function GameFiles({ targets }: { targets: TargetView[] }) {
                 </label>
                 <span className="asset-source">{item.sourceName}</span>
                 <span className="asset-size">{formatSize(item.size)}</span>
-                {item.sourceName === "loose file" ? (
-                  <span />
-                ) : (
-                  <button className="replace" onClick={() => replace(item)}>
-                    Replace…
-                  </button>
-                )}
+                <button className="replace" onClick={() => replace(item)}>
+                  Replace…
+                </button>
               </li>
             ))}
             {listing.folders.length === 0 && listing.files.length === 0 && <li className="empty">Nothing here.</li>}

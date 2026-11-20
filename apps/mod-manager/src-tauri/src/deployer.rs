@@ -198,7 +198,13 @@ fn prepare(core: &mut Core) -> Prepared {
         for (id, version) in &selection.selected {
             if let Some(entry) = core.library.version(id, *version) {
                 if let Some((zip, sha)) = entry.files.iter().next() {
-                    mods.push(DeployMod { id: id.clone(), version: *version, zip: zip.clone(), zip_sha256: sha.clone() });
+                    mods.push(DeployMod {
+                        id: id.clone(),
+                        version: *version,
+                        zip: zip.clone(),
+                        zip_sha256: sha.clone(),
+                        resources: entry.info.manifest.resources.clone(),
+                    });
                 }
             }
         }
