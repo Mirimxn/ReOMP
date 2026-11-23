@@ -877,10 +877,19 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
             Ok(index) => index,
             Err(e) => return Outcome::rejected(&e, None::<String>),
         };
-        let problems = crate::draft::check(&draft, &index);
+        let mut problems = crate::draft::check(&draft, &index);
+        let codecs = crate::assets::GameCodecs::for_game(&index.game_dir);
+        let (fixed, notes, texture_problems) = crate::draft::prepare_textures(&draft, &index, &codecs);
+        problems.extend(texture_problems);
         if !problems.is_empty() {
             return Outcome::rejected("The mod isn't ready yet:", problems);
         }
+        let with_notes = |mut outcome: Outcome| {
+            if outcome.ok && !notes.is_empty() {
+                outcome.details.extend(notes.iter().cloned());
+            }
+            outcome
+        };
         let file_name = format!("{}-{}.zip", crate::draft::mod_id(&draft.name), draft.version.trim());
         if to_library {
             let temp_dir = {
@@ -895,8 +904,8 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
                 return Outcome::rejected("Couldn't prepare the mod:", Some(e.to_string()));
             }
             let zip = temp_dir.join(&file_name);
-            let outcome = match crate::draft::export(&draft, &zip) {
-                Ok(_) => import_paths(&app, vec![zip.clone()]),
+            let outcome = match crate::draft::export_with(&draft, &fixed, &zip) {
+                Ok(_) => with_notes(import_paths(&app, vec![zip.clone()])),
                 Err(e) => Outcome::rejected("Couldn't build the mod:", Some(e)),
             };
             let _ = std::fs::remove_file(&zip);
@@ -916,8 +925,8 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
                 Ok(out) => out,
                 Err(e) => return Outcome::rejected("Can't save there:", Some(e.to_string())),
             };
-            match crate::draft::export(&draft, &out) {
-                Ok(_) => Outcome::ok(vec![format!("Saved {}", out.display())]),
+            match crate::draft::export_with(&draft, &fixed, &out) {
+                Ok(_) => with_notes(Outcome::ok(vec![format!("Saved {}", out.display())])),
                 Err(e) => Outcome::rejected("Couldn't build the mod:", Some(e)),
             }
         }
