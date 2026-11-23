@@ -166,6 +166,19 @@ impl AssetIndex {
         self.with_prefix(path).iter().find(|i| i.path == path && i.source == source)
     }
 
+    /// Reads one item's bytes from its archive or the game folder.
+    pub fn read(&self, item: &Item, codecs: &dyn Codecs) -> Result<Vec<u8>, String> {
+        if item.source == LOOSE {
+            let from = safe_join(&self.game_dir, &item.path)?;
+            fs::read(&from).map_err(|e| format!("can't read {}: {e}", from.display()))
+        } else {
+            let archive = &self.archives[item.source as usize];
+            let entry = &archive.entries[item.entry as usize];
+            let mut file = File::open(&archive.file).map_err(|e| format!("can't open {}: {e}", archive.file.display()))?;
+            dat::read_entry(&mut file, entry, codecs)
+        }
+    }
+
     /// Extracts one item to `<dest>/<path>`, writing a temporary file first.
     pub fn extract(&self, item: &Item, dest: &Path, codecs: &dyn Codecs) -> Result<PathBuf, String> {
         let target = safe_join(dest, &item.path)?;

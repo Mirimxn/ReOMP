@@ -17,6 +17,8 @@ use crate::version::Version;
 pub const MODS_DIR: &str = "mods";
 pub const LEGACY_DIR: &str = "legacy-mods";
 const TXN_PREFIX: &str = ".reomp-txn-";
+/// Loose game files a mod replaced, kept until the mod no longer needs the path.
+pub const ORIGINALS_DIR: &str = ".reomp-originals";
 /// Files only an OMP installation puts in the game folder.
 const OMP_MARKERS: &[&str] = &["omp-lswtss-driver.dll", "omp-lswtss-driver-config.json"];
 const OMP_PREFIX: &str = "omp-lswtss-";
@@ -87,6 +89,9 @@ fn rel_path(base: &Path, rel: &str) -> PathBuf {
 pub struct ReceiptMod {
     pub version: Version,
     pub zip_sha256: String,
+    /// Game paths this mod gave up to another mod.
+    #[serde(default)]
+    pub skipped: BTreeSet<String>,
 }
 
 /// What the manager installed into one game folder.
@@ -101,6 +106,12 @@ pub struct Receipt {
     /// Earlier `mods/` folders moved aside, relative to the game folder.
     #[serde(default)]
     pub legacy_backups: Vec<String>,
+    /// Game paths placed from mods' resource declarations, and the owning mod.
+    #[serde(default)]
+    pub resources: BTreeMap<String, String>,
+    /// Game paths whose original loose file was set aside, and where it is.
+    #[serde(default)]
+    pub originals: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +120,11 @@ pub struct DeployMod {
     pub version: Version,
     pub zip: PathBuf,
     pub zip_sha256: String,
+    /// Game files this mod places, from its manifest.
+    pub resources: Vec<package::Resource>,
+    /// Declared game paths it gives up to a mod chosen over it. They aren't
+    /// placed, and their actions are removed from its installed mod.json.
+    pub skipped: BTreeSet<String>,
 }
 
 /// One target's requested end state. `want: None` removes the manager's files.
@@ -128,7 +144,9 @@ impl TargetPlan<'_> {
                 receipt.payload_version == payload.version
                     && receipt.mods.len() == mods.len()
                     && mods.iter().all(|m| {
-                        receipt.mods.get(&m.id).is_some_and(|r| r.zip_sha256 == m.zip_sha256 && r.version == m.version)
+                        receipt.mods.get(&m.id).is_some_and(|r| {
+                            r.zip_sha256 == m.zip_sha256 && r.version == m.version && r.skipped == m.skipped
+                        })
                     })
             }
             _ => false,
@@ -306,27 +324,59 @@ impl Deployment {
         let mut desired: BTreeMap<String, String> = BTreeMap::new();
         let mut staged: BTreeSet<String> = BTreeSet::new();
         let mut receipt_mods = BTreeMap::new();
+        let mut resource_owner: BTreeMap<String, String> = BTreeMap::new();
+        let previous_resources = plan.previous.as_ref().map(|r| r.resources.clone()).unwrap_or_default();
+        let mut originals = plan.previous.as_ref().map(|r| r.originals.clone()).unwrap_or_default();
         if let Some((payload, mods)) = plan.want {
             for file in &payload.files {
                 desired.insert(file.path.clone(), file.sha256.clone());
             }
             for m in mods {
-                receipt_mods.insert(m.id.clone(), ReceiptMod { version: m.version, zip_sha256: m.zip_sha256.clone() });
+                receipt_mods.insert(
+                    m.id.clone(),
+                    ReceiptMod { version: m.version, zip_sha256: m.zip_sha256.clone(), skipped: m.skipped.clone() },
+                );
+                let placing: Vec<&package::Resource> = m.resources.iter().filter(|r| !m.skipped.contains(&r.path)).collect();
                 let prefix = format!("{MODS_DIR}/{}/", m.id);
                 let previous_mod: Vec<(&String, &String)> =
                     previous_files.iter().filter(|(rel, _)| rel.starts_with(&prefix)).collect();
+                let previous_placed: Vec<&String> =
+                    previous_resources.iter().filter(|(_, owner)| **owner == m.id).map(|(path, _)| path).collect();
                 let unchanged = plan
                     .previous
                     .as_ref()
                     .and_then(|r| r.mods.get(&m.id))
-                    .is_some_and(|r| r.zip_sha256 == m.zip_sha256)
-                    && previous_mod.iter().all(|(rel, _)| rel_path(game, rel).is_file());
+                    .is_some_and(|r| r.zip_sha256 == m.zip_sha256 && r.skipped == m.skipped)
+                    && previous_mod.iter().all(|(rel, _)| rel_path(game, rel).is_file())
+                    && previous_placed.len() == placing.len()
+                    && previous_placed.iter().all(|rel| rel_path(game, rel).is_file() && previous_files.contains_key(*rel));
                 if unchanged {
                     for (rel, sha) in previous_mod {
                         desired.insert(rel.clone(), sha.clone());
                     }
+                    for rel in previous_placed {
+                        desired.insert(rel.clone(), previous_files[rel].clone());
+                        resource_owner.insert(rel.clone(), m.id.clone());
+                    }
                 } else {
-                    for (rel, sha) in extract_mod(m, &stage).map_err(|e| format!("{label}: {e}"))? {
+                    let extracted = extract_mod(m, &stage).map_err(|e| format!("{label}: {e}"))?;
+                    for resource in placing {
+                        let wanted = format!("{MODS_DIR}/{}/{}", m.id, resource.src).to_lowercase();
+                        let Some((source_rel, _)) = extracted.iter().find(|(rel, _)| rel.to_lowercase() == wanted) else {
+                            return Err(format!("{label}: {} points {} at {}, which isn't in the package", m.id, resource.path, resource.src));
+                        };
+                        if let Some(other) = resource_owner.get(&resource.path) {
+                            return Err(format!("{label}: {other} and {} both replace {}", m.id, resource.path));
+                        }
+                        let target = rel_path(&stage, &resource.path);
+                        self.mkdir_all(target.parent().unwrap_or(&stage))?;
+                        let mut source = File::open(rel_path(&stage, source_rel)).map_err(|e| format!("{label}: {e}"))?;
+                        let sha = copy_hashed(&mut source, &target).map_err(|e| format!("{label}: can't stage {}: {e}", resource.path))?;
+                        staged.insert(resource.path.clone());
+                        desired.insert(resource.path.clone(), sha);
+                        resource_owner.insert(resource.path.clone(), m.id.clone());
+                    }
+                    for (rel, sha) in extracted {
                         staged.insert(rel.clone());
                         desired.insert(rel, sha);
                     }
@@ -367,18 +417,32 @@ impl Deployment {
                 }
             }
         }
-        for rel in desired.keys() {
+        // Loose game files at a resource path: identical ones (left by an
+        // earlier runtime link) are replaced; others are set aside and restored later.
+        let mut set_aside: Vec<String> = Vec::new();
+        let mut replace_identical: Vec<String> = Vec::new();
+        for (rel, sha) in &desired {
             let path = rel_path(game, rel);
             let top = rel.split('/').next().unwrap_or("");
             let replaced_legacy = legacy_items.iter().any(|l| l.eq_ignore_ascii_case(top));
             let owned = previous_files.contains_key(rel);
             let in_old_mods = first_install && top.eq_ignore_ascii_case(MODS_DIR);
-            if path.exists() && !owned && !replaced_legacy && !in_old_mods {
-                return Err(format!(
-                    "{label}: {} already exists and wasn't installed by the Mod Manager. Move it out of the game folder, then press Retry.",
-                    path.display()
-                ));
+            if !path.exists() || owned || replaced_legacy || in_old_mods {
+                continue;
             }
+            if resource_owner.contains_key(rel) && path.is_file() {
+                let existing = package::sha256_file(&path).map_err(|e| format!("{label}: can't read {}: {e}", path.display()))?;
+                if existing == *sha {
+                    replace_identical.push(rel.clone());
+                } else {
+                    set_aside.push(rel.clone());
+                }
+                continue;
+            }
+            return Err(format!(
+                "{label}: {} already exists and wasn't installed by the Mod Manager. Move it out of the game folder, then press Retry.",
+                path.display()
+            ));
         }
 
         // 4. Move aside what is being replaced.
@@ -407,11 +471,24 @@ impl Deployment {
                     self.move_path(&path, &rel_path(&backup, rel))?;
                 }
                 if !desired.contains_key(rel) {
-                    if let Some(parent) = path.parent() {
+                    if let Some(kept) = originals.remove(rel) {
+                        self.move_path(&rel_path(game, &kept), &path)?;
+                        if let Some(parent) = rel_path(game, &kept).parent() {
+                            self.tidy.push((parent.to_path_buf(), game.to_path_buf()));
+                        }
+                    } else if let Some(parent) = path.parent() {
                         self.tidy.push((parent.to_path_buf(), game.to_path_buf()));
                     }
                 }
             }
+        }
+        for rel in &replace_identical {
+            self.move_path(&rel_path(game, rel), &rel_path(&backup, rel))?;
+        }
+        for rel in &set_aside {
+            let kept = format!("{ORIGINALS_DIR}/{rel}");
+            self.move_path(&rel_path(game, rel), &rel_path(game, &kept))?;
+            originals.insert(rel.clone(), kept);
         }
 
         // 5. Stage changed payload files, then publish everything staged.
@@ -441,6 +518,8 @@ impl Deployment {
             mods: receipt_mods,
             files: desired,
             legacy_backups,
+            resources: resource_owner,
+            originals,
         }))
     }
 
@@ -590,6 +669,22 @@ fn copy_hashed(reader: &mut impl Read, target: &Path) -> io::Result<String> {
     Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
+/// The manifest without the resource actions for `skipped` paths, so the
+/// runtime doesn't link files another mod was chosen for.
+fn without_resources(text: &str, skipped: &BTreeSet<String>) -> Result<String, String> {
+    let mut value: serde_json::Value = serde_json::from_str(text).map_err(|e| format!("mod.json isn't valid JSON: {e}"))?;
+    if let Some(actions) = value.get_mut("actions").and_then(|a| a.as_array_mut()) {
+        actions.retain(|action| {
+            let type_id = action.get("typeId").and_then(|t| t.as_str()).unwrap_or("");
+            let path = action.pointer("/payload/path").and_then(|p| p.as_str()).unwrap_or("");
+            let given_up = package::RESOURCE_ACTIONS.contains(&type_id)
+                && package::check_game_path(path).is_ok_and(|p| skipped.contains(&p));
+            !given_up
+        });
+    }
+    serde_json::to_string_pretty(&value).map_err(|e| e.to_string())
+}
+
 /// Unpacks a mod ZIP to `<stage>/mods/<id>/` and returns each file with its hash.
 fn extract_mod(m: &DeployMod, stage: &Path) -> Result<Vec<(String, String)>, String> {
     let info = package::read_package(&m.zip).map_err(|e| format!("{}: {e}", m.zip.display()))?;
@@ -610,7 +705,14 @@ fn extract_mod(m: &DeployMod, stage: &Path) -> Result<Vec<(String, String)>, Str
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Can't create {}: {e}", parent.display()))?;
         }
-        let sha = copy_hashed(&mut entry, &target).map_err(|e| format!("Can't unpack {}: {e}", rel))?;
+        let sha = if !m.skipped.is_empty() && entry.name() == format!("{}/mod.json", m.id) {
+            let mut text = String::new();
+            entry.read_to_string(&mut text).map_err(|e| format!("Can't read {rel}: {e}"))?;
+            let trimmed = without_resources(&text, &m.skipped)?;
+            copy_hashed(&mut trimmed.as_bytes(), &target).map_err(|e| format!("Can't unpack {}: {e}", rel))?
+        } else {
+            copy_hashed(&mut entry, &target).map_err(|e| format!("Can't unpack {}: {e}", rel))?
+        };
         files.push((rel, sha));
     }
     Ok(files)
@@ -663,6 +765,8 @@ mod tests {
         fs::create_dir_all(&zips).unwrap();
         let zip = write_mod(&zips, &format!("{id}-{version}-{extra}.zip"), id, version, &[], extra);
         DeployMod {
+            resources: Vec::new(),
+            skipped: BTreeSet::new(),
             id: id.into(),
             version: Version::parse(version).unwrap(),
             zip_sha256: package::sha256_file(&zip).unwrap(),
@@ -800,6 +904,93 @@ mod tests {
 
         let receipt = run(&f, &[plan(&dir, Some((&f.payload, &[])), None)]).unwrap().remove(0).unwrap();
         assert!(dir.join(&receipt.legacy_backups[0]).join("gunship/mod.json").is_file());
+    }
+
+    fn resource_mod(root: &Path, id: &str, files: &[(&str, &[u8])]) -> DeployMod {
+        let zips = root.join("zips");
+        fs::create_dir_all(&zips).unwrap();
+        let actions: Vec<String> = files
+            .iter()
+            .enumerate()
+            .map(|(i, (path, _))| {
+                format!(r#"{{"typeId":"v1/register-custom-resource-action","payload":{{"path":"{path}","srcPath":"files/{i}.bin"}}}}"#)
+            })
+            .collect();
+        let json = format!(r#"{{"name":"{id}","version":"1.0.0","dependencies":[],"actions":[{}]}}"#, actions.join(","));
+        let names: Vec<String> = (0..files.len()).map(|i| format!("{id}/files/{i}.bin")).collect();
+        let manifest = format!("{id}/mod.json");
+        let mut entries = vec![crate::testutil::Entry::File(&manifest, json.as_bytes())];
+        for (name, (_, bytes)) in names.iter().zip(files) {
+            entries.push(crate::testutil::Entry::File(name, bytes));
+        }
+        let zip = zips.join(format!("{id}.zip"));
+        crate::testutil::write_zip(&zip, &entries);
+        let info = package::read_package(&zip).unwrap();
+        DeployMod {
+            id: id.into(),
+            version: info.manifest.version,
+            zip_sha256: info.sha256,
+            resources: info.manifest.resources,
+            skipped: BTreeSet::new(),
+            zip,
+        }
+    }
+
+    #[test]
+    fn places_resources_and_restores_loose_originals() {
+        let f = fixture("deploy-assets");
+        let dir = game(&f.root, "game");
+        fs::create_dir_all(dir.join("CHARS/A")).unwrap();
+        fs::write(dir.join("CHARS/A/B.GHG"), b"original").unwrap();
+        fs::write(dir.join("CHARS/A/SAME.GHG"), b"same").unwrap();
+        let before = snapshot(&dir);
+        let mods = vec![resource_mod(&f.root, "r", &[("chars/a/b.ghg", b"new"), ("chars/new/c.tex", b"added"), ("CHARS/A/SAME.GHG", b"same")])];
+
+        // A failure after the original was set aside puts everything back.
+        let mut d = Deployment::begin(&f.journal).unwrap();
+        d.fail_at_move = Some(5);
+        assert!(d.apply(&plan(&dir, Some((&f.payload, &mods)), None)).is_err());
+        d.rollback().unwrap();
+        assert_eq!(snapshot(&dir), before);
+
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, &mods)), None)]).unwrap().remove(0).unwrap();
+        assert_eq!(fs::read(dir.join("CHARS/A/B.GHG")).unwrap(), b"new");
+        assert_eq!(fs::read(dir.join("CHARS/NEW/C.TEX")).unwrap(), b"added");
+        assert_eq!(fs::read(dir.join(ORIGINALS_DIR).join("CHARS/A/B.GHG")).unwrap(), b"original");
+        assert_eq!(receipt.originals.len(), 1, "an identical loose file isn't kept as an original");
+        assert_eq!(receipt.resources["CHARS/A/B.GHG"], "r");
+
+        // Turning the mod off restores the original and removes the added file.
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, &[])), Some(receipt))]).unwrap().remove(0).unwrap();
+        assert_eq!(fs::read(dir.join("CHARS/A/B.GHG")).unwrap(), b"original");
+        assert!(!dir.join("CHARS/NEW").exists());
+        assert!(!dir.join("CHARS/A/SAME.GHG").exists(), "the identical file belonged to the mod's earlier link");
+        assert!(!dir.join(ORIGINALS_DIR).exists());
+        assert!(receipt.originals.is_empty() && receipt.resources.is_empty());
+    }
+
+    #[test]
+    fn a_chosen_mod_takes_over_shared_files() {
+        let f = fixture("deploy-winner");
+        let dir = game(&f.root, "game");
+        let old = resource_mod(&f.root, "old", &[("chars/a/b.texture", b"old"), ("chars/a/c.texture", b"old-c")]);
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, std::slice::from_ref(&old))), None)]).unwrap().remove(0).unwrap();
+        assert_eq!(fs::read(dir.join("CHARS/A/B.TEXTURE")).unwrap(), b"old");
+
+        // "new" is chosen over "old" for B: old gives it up and its installed manifest stops declaring it.
+        let mut old = old;
+        old.skipped = BTreeSet::from(["CHARS/A/B.TEXTURE".to_string()]);
+        let new = resource_mod(&f.root, "new", &[("chars/a/b.texture", b"new")]);
+        let mods = vec![new, old];
+        assert!(!plan(&dir, Some((&f.payload, &mods)), Some(receipt.clone())).is_satisfied());
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, &mods)), Some(receipt))]).unwrap().remove(0).unwrap();
+        assert_eq!(fs::read(dir.join("CHARS/A/B.TEXTURE")).unwrap(), b"new");
+        assert_eq!(fs::read(dir.join("CHARS/A/C.TEXTURE")).unwrap(), b"old-c");
+        assert_eq!(receipt.resources["CHARS/A/B.TEXTURE"], "new");
+        let installed = fs::read_to_string(dir.join("mods/old/mod.json")).unwrap();
+        assert!(!installed.contains("CHARS/A/B.TEXTURE") && !installed.contains("chars/a/b.texture"), "{installed}");
+        assert!(installed.contains("chars/a/c.texture"));
+        assert!(plan(&dir, Some((&f.payload, &mods)), Some(receipt)).is_satisfied());
     }
 
     #[test]

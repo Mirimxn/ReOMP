@@ -27,6 +27,50 @@ pub struct Manifest {
     pub description: Option<String>,
     pub version: Version,
     pub dependencies: Vec<Dependency>,
+    /// Game files the mod replaces or adds, from its resource actions.
+    pub resources: Vec<Resource>,
+}
+
+/// One declared game file: `path` in the game folder (upper case, `/`) and the
+/// packaged file `src` relative to the mod folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resource {
+    pub path: String,
+    pub src: String,
+}
+
+/// Manifest actions that place a packaged file at a game path. The manager
+/// installs and tracks these files; the runtime provider routes the lookup.
+pub const RESOURCE_ACTIONS: &[&str] = &["v1/register-custom-resource-action", "asset-replacement/register"];
+
+fn safe_segments(path: &str) -> Option<Vec<&str>> {
+    let segments: Vec<&str> = path.split('/').collect();
+    let ok = segments.iter().all(|s| {
+        !s.is_empty()
+            && *s != "."
+            && *s != ".."
+            && !s.ends_with(['.', ' '])
+            && !s.chars().any(|c| c.is_control() || "<>\":|?*\\".contains(c))
+    });
+    ok.then_some(segments)
+}
+
+/// Checks a resource destination and returns it in the game's upper-case form.
+/// Archives, executables, libraries and the folders OMP and the manager own are reserved.
+pub fn check_game_path(path: &str) -> Result<String, String> {
+    let normal = path.replace('\\', "/");
+    let normal = normal.trim_start_matches('/');
+    let Some(segments) = safe_segments(normal) else {
+        return Err(format!("\"{path}\" isn't a safe game path"));
+    };
+    let first = segments[0].to_ascii_lowercase();
+    let reserved_folder = first == "mods" || first == "legacy-mods" || first.starts_with("omp") || first.starts_with('.');
+    let extension = segments.last().and_then(|s| s.rsplit_once('.')).map(|(_, e)| e.to_ascii_lowercase());
+    let reserved_file = matches!(extension.as_deref(), Some("dat" | "dat2" | "exe" | "dll"));
+    if segments.len() < 2 || reserved_folder || reserved_file {
+        return Err(format!("\"{path}\" is reserved: mods can only replace game assets inside the game's asset folders"));
+    }
+    Ok(normal.to_uppercase())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +171,12 @@ pub fn read_package(path: &Path) -> Result<PackageInfo, String> {
         text
     };
     let manifest = parse_manifest(&text)?;
+    for resource in &manifest.resources {
+        let key = format!("{}/{}", fold(&id), resource.src.split('/').map(fold).collect::<Vec<_>>().join("/"));
+        if !files.contains(&key) {
+            return Err(format!("mod.json points {} at {}, which isn't in the package", resource.path, resource.src));
+        }
+    }
     drop(archive);
 
     let sha256 = sha256_file(path).map_err(|e| format!("can't read the file: {e}"))?;
@@ -211,7 +261,30 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         };
         dependencies.push(Dependency { id, min_version });
     }
-    Ok(Manifest { name, description, version, dependencies })
+    let mut resources: Vec<Resource> = Vec::new();
+    if let Some(Value::Array(actions)) = object.get("actions") {
+        for action in actions {
+            let type_id = action.get("typeId").and_then(Value::as_str).unwrap_or("");
+            if !RESOURCE_ACTIONS.contains(&type_id) {
+                continue;
+            }
+            let payload = action.get("payload");
+            let field = |name: &str| payload.and_then(|p| p.get(name)).and_then(Value::as_str);
+            let (Some(path), Some(src)) = (field("path"), field("srcPath")) else {
+                return Err(format!("a {type_id} action in mod.json needs \"path\" and \"srcPath\""));
+            };
+            let path = check_game_path(path)?;
+            let src = src.replace('\\', "/");
+            if safe_segments(&src).is_none() {
+                return Err(format!("srcPath \"{src}\" in mod.json isn't a safe path inside the mod"));
+            }
+            if resources.iter().any(|r| r.path == path) {
+                return Err(format!("mod.json replaces {path} twice"));
+            }
+            resources.push(Resource { path, src });
+        }
+    }
+    Ok(Manifest { name, description, version, dependencies, resources })
 }
 
 #[cfg(test)]
@@ -279,6 +352,33 @@ mod tests {
         }
         let ok = parse_manifest(r#"{"name":"M","description":"d","version":"0.1.0","actions":[],"dependencies":[]}"#).unwrap();
         assert_eq!(ok.description.as_deref(), Some("d"));
+    }
+
+    #[test]
+    fn reads_resource_declarations() {
+        let json = r#"{"name":"R","version":"1.0.0","dependencies":[],"actions":[
+            {"typeId":"v1/register-custom-resource-action","payload":{"path":"chars/a/b.ghg","srcPath":"files/B.GHG"}},
+            {"typeId":"asset-replacement/register","payload":{"path":"LEVELS\\X\\Y","srcPath":"files/y.7z"}},
+            {"typeId":"v1/register-custom-vehicle-action","payload":{"id":"V"}}]}"#;
+        let info = read(&[
+            Entry::File("r/mod.json", json.as_bytes()),
+            Entry::File("r/files/B.GHG", b"b"),
+            Entry::File("r/files/y.7z", b"y"),
+        ])
+        .unwrap();
+        let paths: Vec<&str> = info.manifest.resources.iter().map(|r| r.path.as_str()).collect();
+        assert_eq!(paths, vec!["CHARS/A/B.GHG", "LEVELS/X/Y"]);
+
+        let missing = json.replace("files/y.7z", "files/none.7z");
+        assert!(read(&[Entry::File("r/mod.json", missing.as_bytes()), Entry::File("r/files/B.GHG", b"b")]).is_err());
+    }
+
+    #[test]
+    fn reserves_archives_and_manager_folders() {
+        for bad in ["GAME1.DAT", "x/GAME1.DAT", "mods/a/b", "legacy-mods/a", "omp-lswtss-driver.dll", "a/../b", "c:/x/y", "dinput8.dll", "a/b.exe", "single"] {
+            assert!(check_game_path(bad).is_err(), "{bad}");
+        }
+        assert_eq!(check_game_path("/chars/a.texture").unwrap(), "CHARS/A.TEXTURE");
     }
 
     #[test]

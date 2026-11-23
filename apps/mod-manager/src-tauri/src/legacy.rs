@@ -106,6 +106,45 @@ pub fn pack(folder: &Path, id: &str, out: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Copies a mod ZIP with an upgraded `mod.json`; every other entry is copied unchanged.
+pub fn upgrade_zip(src: &Path, out: &Path) -> Result<(), String> {
+    let file = File::open(src).map_err(|e| format!("can't open it: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("not a readable ZIP: {e}"))?;
+    let manifest_name = (0..archive.len())
+        .filter_map(|i| archive.by_index_raw(i).ok().map(|e| e.name().to_string()))
+        .find(|n| n.split('/').count() == 2 && n.ends_with("/mod.json"))
+        .ok_or("it has no mod.json inside a top-level folder")?;
+    let mut text = String::new();
+    io::Read::read_to_string(&mut archive.by_name(&manifest_name).map_err(|e| e.to_string())?, &mut text)
+        .map_err(|e| format!("can't read mod.json: {e}"))?;
+    let upgraded = upgrade_manifest(&text)?;
+    let fail = |e: &dyn std::fmt::Display| format!("can't write {}: {e}", out.display());
+    let mut writer = zip::ZipWriter::new(File::create(out).map_err(|e| fail(&e))?);
+    for i in 0..archive.len() {
+        let entry = archive.by_index_raw(i).map_err(|e| fail(&e))?;
+        if entry.name() == manifest_name {
+            drop(entry);
+            writer.start_file(manifest_name.as_str(), SimpleFileOptions::default()).map_err(|e| fail(&e))?;
+            writer.write_all(upgraded.as_bytes()).map_err(|e| fail(&e))?;
+        } else {
+            writer.raw_copy_file(entry).map_err(|e| fail(&e))?;
+        }
+    }
+    writer.finish().map_err(|e| fail(&e))?;
+    Ok(())
+}
+
+/// Whether adding the missing fields makes `src` a valid package. Uses `temp_dir` for a trial copy.
+pub fn can_upgrade_zip(src: &Path, temp_dir: &Path) -> bool {
+    if fs::create_dir_all(temp_dir).is_err() {
+        return false;
+    }
+    let trial = temp_dir.join(format!("trial-{}.zip", std::process::id()));
+    let ok = upgrade_zip(src, &trial).is_ok() && crate::package::read_package(&trial).is_ok();
+    let _ = fs::remove_file(&trial);
+    ok
+}
+
 /// Regular files under `dir`, relative to `base` with `/`. Links are skipped.
 fn collect(base: &Path, dir: &Path, out: &mut Vec<String>) -> io::Result<()> {
     for entry in fs::read_dir(dir)? {
@@ -140,6 +179,30 @@ mod tests {
         assert_eq!(upgraded["extra"], 1);
         let kept = upgrade_manifest(r#"{"name":"M","version":"2.0.0","actions":[],"dependencies":[{"id":"v1","minVersion":"1.0.0"}]}"#).unwrap();
         assert!(kept.contains("2.0.0") && kept.contains("1.0.0"));
+    }
+
+    #[test]
+    fn adds_a_version_to_a_zip_without_one() {
+        let dir = temp_dir("legacy-zip");
+        let src = dir.join("old.zip");
+        crate::testutil::write_zip(
+            &src,
+            &[
+                crate::testutil::Entry::File("old/mod.json", br#"{"name":"Old","actions":[],"dependencies":[{"id":"v1"}]}"#),
+                crate::testutil::Entry::File("old/icon.png", b"png"),
+            ],
+        );
+        assert!(read_package(&src).is_err());
+        assert!(can_upgrade_zip(&src, &dir.join("tmp")));
+        let out = dir.join("new.zip");
+        upgrade_zip(&src, &out).unwrap();
+        let info = read_package(&out).unwrap();
+        assert_eq!(info.manifest.version, Version::parse(LEGACY_VERSION).unwrap());
+        assert_eq!(info.manifest.dependencies[0].min_version, Version(0, 0, 0));
+
+        let broken = dir.join("broken.zip");
+        fs::write(&broken, b"nope").unwrap();
+        assert!(!can_upgrade_zip(&broken, &dir.join("tmp")));
     }
 
     #[test]

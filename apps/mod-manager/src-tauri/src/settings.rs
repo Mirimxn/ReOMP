@@ -30,6 +30,15 @@ pub struct ManagerState {
     /// so one the player removes isn't added back.
     #[serde(default, rename = "bundledImported")]
     pub bundled_imported: BTreeSet<String>,
+    /// For two mods that place the same files, the one whose files are used.
+    /// Keyed by `pair_key`.
+    #[serde(default, rename = "fileWinners")]
+    pub winners: BTreeMap<String, String>,
+}
+
+/// Order-independent key for two mod IDs.
+pub fn pair_key(a: &str, b: &str) -> String {
+    if a <= b { format!("{a}|{b}") } else { format!("{b}|{a}") }
 }
 
 pub struct Loaded {

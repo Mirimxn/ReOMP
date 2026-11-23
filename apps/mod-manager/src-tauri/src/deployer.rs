@@ -193,12 +193,19 @@ fn prepare(core: &mut Core) -> Prepared {
     let mut mods = Vec::new();
     let mut payload = None;
     if installing {
-        let selection = resolve::resolve(&core.library, &core.state.enabled, &core.state.pinned);
+        let selection = resolve::resolve_with(&core.library, &core.state.enabled, &core.state.pinned, &core.state.winners);
         reasons.extend(selection.problems.iter().map(|p| p.message.clone()));
         for (id, version) in &selection.selected {
             if let Some(entry) = core.library.version(id, *version) {
                 if let Some((zip, sha)) = entry.files.iter().next() {
-                    mods.push(DeployMod { id: id.clone(), version: *version, zip: zip.clone(), zip_sha256: sha.clone() });
+                    mods.push(DeployMod {
+                        id: id.clone(),
+                        version: *version,
+                        zip: zip.clone(),
+                        zip_sha256: sha.clone(),
+                        resources: entry.info.manifest.resources.clone(),
+                        skipped: selection.skipped.get(id).cloned().unwrap_or_default(),
+                    });
                 }
             }
         }

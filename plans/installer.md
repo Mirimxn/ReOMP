@@ -24,13 +24,13 @@ Target Windows 10 and 11 on x86-64. Use Tauri's **NSIS setup executable**, insta
        "targets": ["nsis"],
        "windows": {
          "nsis": { "installMode": "currentUser" },
-         "webviewInstallMode": { "type": "offlineInstaller", "silent": true }
+         "webviewInstallMode": { "type": "embedBootstrapper", "silent": true }
        }
      }
    }
    ```
 
-   The offline WebView2 installer adds roughly 127 MB and lets setup supply the runtime on a machine without internet access. Tauri handles the prerequisite inside its standard installer. [Tauri Windows installer guide](https://v2.tauri.app/distribute/windows-installer/#offline-installer)
+   The embedded WebView2 bootstrapper adds about 2 MB and downloads the runtime only on a machine that lacks it; Windows 11 and current Windows 10 include WebView2. The offline installer was used first but made the setup executable about 200 MB larger, and the bundled OMP payload and core mods already make it large. Tauri handles the prerequisite inside its standard installer. [Tauri Windows installer guide](https://v2.tauri.app/distribute/windows-installer/#webview2-installation-options)
 
 3. Build on Windows with Node 24.18.0, Rust 1.95.0 and the Microsoft C++ Build Tools with the Desktop development with C++ workload. From `apps/mod-manager/`, run:
 

@@ -70,7 +70,7 @@ impl Core {
             }
         }
         let current = self.selection_for(&self.state).problems;
-        let after = resolve::resolve(&proposed, &self.state.enabled, &self.state.pinned).problems;
+        let after = resolve::resolve_with(&proposed, &self.state.enabled, &self.state.pinned, &self.state.winners).problems;
         let added: Vec<String> = after.into_iter().filter(|p| !current.contains(p)).map(|p| p.message).collect();
         if !added.is_empty() {
             let mut details = added;
@@ -121,7 +121,7 @@ impl Core {
     }
 
     fn selection_for(&self, state: &ManagerState) -> resolve::Selection {
-        resolve::resolve(&self.library, &state.enabled, &state.pinned)
+        resolve::resolve_with(&self.library, &state.enabled, &state.pinned, &state.winners)
     }
 
     /// Applies a change to the saved selection only if it adds no new problems.
@@ -136,7 +136,14 @@ impl Core {
             .filter(|p| !current.contains(p))
             .collect();
         if !added.is_empty() {
-            return Outcome::rejected("That change was blocked, so nothing changed:", added.into_iter().map(|p| p.message));
+            let mut choices: Vec<(String, String)> = added.iter().filter_map(|p| p.pair.clone()).collect();
+            choices.sort();
+            choices.dedup();
+            let mut outcome = Outcome::rejected("That change was blocked, so nothing changed:", added.iter().map(|p| p.message.clone()));
+            outcome.details.sort();
+            outcome.details.dedup();
+            outcome.choices = choices;
+            return outcome;
         }
         let Some(file) = self.state_file.clone() else {
             return Outcome::rejected("The manager's settings aren't available.", None::<String>);
@@ -159,14 +166,31 @@ pub struct Outcome {
     /// A mod that can be enabled together with the mods it needs.
     #[serde(skip_serializing_if = "Option::is_none")]
     offer: Option<String>,
+    /// Pairs of mods placing the same files; the player picks one of each.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    choices: Vec<(String, String)>,
+    /// The mod being enabled when the change was blocked, to retry after a choice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    retry_enable: Option<String>,
+    /// Files that only lack the newer manifest fields and can be imported with them added.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    auto_version: Vec<String>,
 }
 
 impl Outcome {
     fn ok(details: Vec<String>) -> Self {
-        Outcome { ok: true, title: String::new(), details, offer: None }
+        Outcome { ok: true, title: String::new(), details, offer: None, choices: Vec::new(), retry_enable: None, auto_version: Vec::new() }
     }
     fn rejected(title: &str, details: impl IntoIterator<Item = String>) -> Self {
-        Outcome { ok: false, title: title.to_string(), details: details.into_iter().collect(), offer: None }
+        Outcome {
+            ok: false,
+            title: title.to_string(),
+            details: details.into_iter().collect(),
+            offer: None,
+            choices: Vec::new(),
+            retry_enable: None,
+            auto_version: Vec::new(),
+        }
     }
 }
 
@@ -191,6 +215,8 @@ pub struct ModView {
     selected: Option<Version>,
     /// Version installed in the game by the last deployment, when any.
     deployed: Option<Version>,
+    /// Mods whose shared files this mod's files were chosen over.
+    chosen_over: Vec<String>,
     problems: Vec<String>,
 }
 
@@ -263,6 +289,13 @@ fn view(core: &Core) -> LibraryView {
                 enabled: core.state.enabled.contains(id),
                 pinned: core.state.pinned.get(id).copied(),
                 selected: selection.selected.get(id).copied(),
+                chosen_over: core
+                    .state
+                    .winners
+                    .iter()
+                    .filter(|(_, winner)| *winner == id)
+                    .filter_map(|(key, _)| key.split('|').find(|other| *other != id.as_str()).map(str::to_string))
+                    .collect(),
                 deployed: core.deploy.receipts.values().find_map(|r| r.mods.get(id.as_str()).map(|m| m.version)),
                 problems: selection.problems.iter().filter(|p| &p.mod_id == id).map(|p| p.message.clone()).collect(),
             }
@@ -461,7 +494,18 @@ fn import_paths(app: &AppHandle, paths: Vec<PathBuf>) -> Outcome {
                 .chain(summary.skipped)
                 .collect(),
         ),
-        Err(errors) => Outcome::rejected("Nothing was imported:", errors),
+        Err(errors) => {
+            let mut outcome = Outcome::rejected("Nothing was imported:", errors);
+            let temp_dir = core.deploy.data_dir.as_ref().map(|d| d.join("tmp"));
+            if let Some(temp_dir) = temp_dir {
+                outcome.auto_version = paths
+                    .iter()
+                    .filter(|p| crate::package::read_package(p).is_err() && legacy::can_upgrade_zip(p, &temp_dir))
+                    .map(|p| p.display().to_string())
+                    .collect();
+            }
+            outcome
+        }
     };
     core.rescan();
     core.deploy.kick();
@@ -523,6 +567,9 @@ pub async fn set_enabled(
             let missing = needed.iter().any(|d| !core.state.enabled.contains(d) && *d != id);
             if enabled && !outcome.ok && missing {
                 outcome.offer = Some(id.clone());
+            }
+            if enabled && !outcome.ok && !outcome.choices.is_empty() {
+                outcome.retry_enable = Some(id.clone());
             }
             outcome
         }
@@ -830,10 +877,19 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
             Ok(index) => index,
             Err(e) => return Outcome::rejected(&e, None::<String>),
         };
-        let problems = crate::draft::check(&draft, &index);
+        let mut problems = crate::draft::check(&draft, &index);
+        let codecs = crate::assets::GameCodecs::for_game(&index.game_dir);
+        let (fixed, notes, texture_problems) = crate::draft::prepare_textures(&draft, &index, &codecs);
+        problems.extend(texture_problems);
         if !problems.is_empty() {
             return Outcome::rejected("The mod isn't ready yet:", problems);
         }
+        let with_notes = |mut outcome: Outcome| {
+            if outcome.ok && !notes.is_empty() {
+                outcome.details.extend(notes.iter().cloned());
+            }
+            outcome
+        };
         let file_name = format!("{}-{}.zip", crate::draft::mod_id(&draft.name), draft.version.trim());
         if to_library {
             let temp_dir = {
@@ -848,8 +904,8 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
                 return Outcome::rejected("Couldn't prepare the mod:", Some(e.to_string()));
             }
             let zip = temp_dir.join(&file_name);
-            let outcome = match crate::draft::export(&draft, &zip) {
-                Ok(_) => import_paths(&app, vec![zip.clone()]),
+            let outcome = match crate::draft::export_with(&draft, &fixed, &zip) {
+                Ok(_) => with_notes(import_paths(&app, vec![zip.clone()])),
                 Err(e) => Outcome::rejected("Couldn't build the mod:", Some(e)),
             };
             let _ = std::fs::remove_file(&zip);
@@ -869,11 +925,70 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
                 Ok(out) => out,
                 Err(e) => return Outcome::rejected("Can't save there:", Some(e.to_string())),
             };
-            match crate::draft::export(&draft, &out) {
-                Ok(_) => Outcome::ok(vec![format!("Saved {}", out.display())]),
+            match crate::draft::export_with(&draft, &fixed, &out) {
+                Ok(_) => with_notes(Outcome::ok(vec![format!("Saved {}", out.display())])),
                 Err(e) => Outcome::rejected("Couldn't build the mod:", Some(e)),
             }
         }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Records which of two mods' shared files to use.
+#[tauri::command]
+pub async fn set_file_winner(app: AppHandle, state: State<'_, AppState>, winner: String, loser: String) -> Result<Outcome, String> {
+    let outcome = lock(&state).change(|s| {
+        s.winners.insert(crate::settings::pair_key(&winner, &loser), winner.clone());
+    });
+    notify(&app);
+    Ok(outcome)
+}
+
+/// Forgets a choice between two mods; if both stay enabled, the clash is reported again.
+#[tauri::command]
+pub async fn clear_file_winner(app: AppHandle, state: State<'_, AppState>, a: String, b: String) -> Result<Outcome, String> {
+    let outcome = lock(&state).change(|s| {
+        s.winners.remove(&crate::settings::pair_key(&a, &b));
+    });
+    notify(&app);
+    Ok(outcome)
+}
+
+/// Imports ZIPs after adding a missing version and dependency minimums, as for old mods.
+#[tauri::command]
+pub async fn import_with_auto_version(app: AppHandle, paths: Vec<String>) -> Result<Outcome, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let temp_dir = {
+            let state = app.state::<AppState>();
+            let core = lock(&state);
+            core.deploy.data_dir.as_ref().map(|d| d.join("tmp"))
+        };
+        let Some(temp_dir) = temp_dir else {
+            return Outcome::rejected("The mod library isn't available.", None::<String>);
+        };
+        if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+            return Outcome::rejected("Couldn't prepare the mods:", Some(e.to_string()));
+        }
+        let mut upgraded = Vec::new();
+        let mut errors = Vec::new();
+        for (i, path) in paths.iter().map(PathBuf::from).enumerate() {
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let out = temp_dir.join(format!("auto-{i}-{name}"));
+            match legacy::upgrade_zip(&path, &out) {
+                Ok(()) => upgraded.push(out),
+                Err(e) => errors.push(format!("{name}: {e}")),
+            }
+        }
+        let outcome = if errors.is_empty() {
+            import_paths(&app, upgraded.clone())
+        } else {
+            Outcome::rejected("Nothing was imported:", errors)
+        };
+        for file in upgraded {
+            let _ = std::fs::remove_file(file);
+        }
+        outcome
     })
     .await
     .map_err(|e| e.to_string())

@@ -4,7 +4,7 @@
     "targets": ["nsis"],
     "windows": {
       "nsis": { "installMode": "currentUser" },
-      "webviewInstallMode": { "type": "offlineInstaller", "silent": true }
+      "webviewInstallMode": { "type": "embedBootstrapper", "silent": true }
     }
   }
 }

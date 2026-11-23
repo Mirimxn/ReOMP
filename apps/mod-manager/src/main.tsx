@@ -25,6 +25,7 @@ type ModView = {
   pinned: string | null;
   selected: string | null;
   deployed: string | null;
+  chosenOver: string[];
   problems: string[];
 };
 type TargetView = {
@@ -52,7 +53,15 @@ type LibraryView = {
   mods: ModView[];
   invalid: { file: string; reason: string }[];
 };
-type Outcome = { ok: boolean; title: string; details: string[]; offer?: string };
+type Outcome = {
+  ok: boolean;
+  title: string;
+  details: string[];
+  offer?: string;
+  choices?: [string, string][];
+  retryEnable?: string;
+  autoVersion?: string[];
+};
 type LegacyView = { id: string; name: string; folder: string };
 
 function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => void }) {
@@ -114,6 +123,14 @@ function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => v
           {mod.selected ? ` (switching to ${mod.selected})` : mod.enabled ? "" : " (being removed)"}
         </p>
       )}
+      {mod.chosenOver.map((other) => (
+        <p key={other} className="mod-description">
+          Its files are used instead of {other}'s where both replace the same file.{" "}
+          <button className="link" onClick={() => invoke<Outcome>("clear_file_winner", { a: mod.id, b: other }).then(onOutcome)}>
+            Undo
+          </button>
+        </p>
+      ))}
       {mod.problems.map((p) => (
         <p key={p} className="problem">
           {p}
@@ -246,8 +263,8 @@ function DraftPanel({
         ))}
       </ul>
       <p className="hint">
-        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's v1 mod and only replaces files inside the game's
-        archives.
+        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's v1 mod. When it's turned off, the game's own files
+        come back.
       </p>
       <div className="toolbar">
         <button disabled={building || draft.files.length === 0} onClick={() => build(true)}>
@@ -429,13 +446,9 @@ function GameFiles({ targets }: { targets: TargetView[] }) {
                 </label>
                 <span className="asset-source">{item.sourceName}</span>
                 <span className="asset-size">{formatSize(item.size)}</span>
-                {item.sourceName === "loose file" ? (
-                  <span />
-                ) : (
-                  <button className="replace" onClick={() => replace(item)}>
-                    Replace…
-                  </button>
-                )}
+                <button className="replace" onClick={() => replace(item)}>
+                  Replace…
+                </button>
               </li>
             ))}
             {listing.folders.length === 0 && listing.files.length === 0 && <li className="empty">Nothing here.</li>}
@@ -543,6 +556,42 @@ function App() {
               <li key={d}>{d}</li>
             ))}
           </ul>
+          {outcome.choices && outcome.choices.length > 0 && (
+            <div className="choices">
+              {outcome.choices.flatMap(([a, b]) =>
+                [
+                  [a, b],
+                  [b, a],
+                ].map(([winner, loser]) => (
+                  <button
+                    key={`${winner}>${loser}`}
+                    onClick={() =>
+                      invoke<Outcome>("set_file_winner", { winner, loser }).then((o) =>
+                        o.ok && outcome.retryEnable
+                          ? invoke<Outcome>("set_enabled", { id: outcome.retryEnable, enabled: true }).then(showOutcome)
+                          : showOutcome(o),
+                      )
+                    }
+                  >
+                    Use {winner}'s files over {loser}
+                  </button>
+                )),
+              )}
+            </div>
+          )}
+          {outcome.autoVersion && outcome.autoVersion.length > 0 && (
+            <div className="auto-version">
+              <p>
+                {outcome.autoVersion.length === 1 ? "This mod has" : `${outcome.autoVersion.length} of these mods have`} no
+                version. The app can add version 0.1.0 and import {outcome.autoVersion.length === 1 ? "it" : "them"}. This can cause
+                problems later: if the author releases an update numbered below 0.1.0, it will look older than this copy, and the
+                mods it needs are accepted at any version, so the app can't warn you about an outdated one.
+              </p>
+              <button onClick={() => runImport(() => invoke<Outcome>("import_with_auto_version", { paths: outcome.autoVersion }))}>
+                Add version 0.1.0 and import
+              </button>
+            </div>
+          )}
           {outcome.offer && (
             <button
               onClick={() =>
