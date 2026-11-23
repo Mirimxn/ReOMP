@@ -2,7 +2,7 @@
 
 Windows setup installs the ReOMP Mod Manager desktop app. [Installer implementation plan](../../plans/installer.md)
 
-The setup executable is a Tauri NSIS installer for the current user, configured in [`apps/mod-manager/src-tauri/tauri.windows.conf.json`](../../apps/mod-manager/src-tauri/tauri.windows.conf.json). It bundles the offline WebView2 installer.
+The setup executable is a Tauri NSIS installer for the current user, configured in [`apps/mod-manager/src-tauri/tauri.windows.conf.json`](../../apps/mod-manager/src-tauri/tauri.windows.conf.json). It embeds Microsoft's WebView2 bootstrapper, which downloads WebView2 only on a PC that doesn't have it.
 
 ## Get a build
 
