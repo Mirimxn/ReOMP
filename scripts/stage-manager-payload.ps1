@@ -104,5 +104,10 @@ foreach ($mod in @(Get-ChildItem -Path $modsDir -Directory -ErrorAction Silently
     $packed++
 }
 if ($packed -eq 0) { throw "The OMP release contains no core mods." }
+# The release must carry this repository's v1 with asset-replacement, not the
+# upstream v1 that installs the file hooks itself.
+if (-not (Test-Path (Join-Path $CoreModsOut "asset-replacement-*.zip"))) {
+    throw "The OMP release has no asset-replacement mod; v1 or asset-replacement failed to build (see 'Build the OMP release')."
+}
 Write-Host "==> Packed $packed core mods in $CoreModsOut"
 Remove-Item $work -Recurse -Force

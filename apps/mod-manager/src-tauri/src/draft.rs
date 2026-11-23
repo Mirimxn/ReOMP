@@ -1,11 +1,10 @@
 //! Builds an asset replacement mod from files the player picks for game
 //! paths chosen in the Game files view.
 //!
-//! The mod declares each file with v1's `register-custom-resource-action`.
+//! The mod declares each file with the asset-replacement mod's `asset-replacement/register` action.
 //! The manager places the file at its game path during deployment and sets
-//! aside any loose original until the mod no longer needs it; v1 routes the
-//! game's lookup at runtime until the asset-replacement provider takes over
-//! (roadmap ASSET). See plans/mods/asset-replacement.md.
+//! aside any loose original until the mod no longer needs it; asset-replacement
+//! routes the game's lookup at runtime. See plans/mods/asset-replacement.md.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
@@ -19,9 +18,9 @@ use zip::write::SimpleFileOptions;
 use crate::assets::AssetIndex;
 use crate::version::Version;
 
-pub const RESOURCE_ACTION: &str = "v1/register-custom-resource-action";
-pub const PROVIDER: &str = "v1";
-pub const PROVIDER_MIN: &str = "0.1.0";
+pub const RESOURCE_ACTION: &str = "asset-replacement/register";
+pub const PROVIDER: &str = "asset-replacement";
+pub const PROVIDER_MIN: &str = "1.0.0";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

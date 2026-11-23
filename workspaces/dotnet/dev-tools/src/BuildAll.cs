@@ -9,6 +9,7 @@ public static class BuildAll
         BuildCApi1.Execute(steamGameDirPath, egsGameDirPath);
         BuildInputHook1.Execute();
         BuildOverlay1.Execute();
+        BuildAssetReplacement.Execute();
         BuildV1.Execute();
         BuildDebugTools.Execute();
         BuildTestCefMod.Execute();

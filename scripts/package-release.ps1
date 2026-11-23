@@ -104,8 +104,9 @@ Write-Host "==> Building components..."
 # failed build may have wiped its own dist/ folder (which other components
 # reference), so on failure we restore it from the bundle. This avoids having
 # to hard-code which component needs which toolchain.
+# asset-replacement must build before v1, which references its assembly.
 $components = @(
-    "overlay1", "input-hook1", "v1", "debug-tools", "test-cef-mod",
+    "overlay1", "input-hook1", "asset-replacement", "v1", "debug-tools", "test-cef-mod",
     "c-func-hook1", "galaxy-unleashed", "bundle"
 )
 # c-api1 needs both game versions to build (it launches each to scrape its API),
@@ -143,6 +144,17 @@ foreach ($c in $components) {
     }
 }
 Write-Host "    built: $($built -join ', ')"
+
+# asset-replacement owns the file hooks that the upstream v1 still installs itself,
+# so the two ship only together: drop it if v1 didn't build. It isn't in the
+# upstream bundle, so give it a folder for the overlay step below.
+if (($built -contains "asset-replacement") -and -not ($built -contains "v1")) {
+    Write-Warning "v1 didn't build; leaving out asset-replacement so upstream v1 keeps its own file hooks."
+    $built = @($built | Where-Object { $_ -ne "asset-replacement" })
+}
+if ($built -contains "asset-replacement") {
+    New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir "mods/asset-replacement") | Out-Null
+}
 
 # 4. Overlay the components that actually built onto the bundle, reusing the
 #    install-* commands. Anything not in $built keeps its upstream version.

@@ -13,6 +13,10 @@
       <HintPath>..\..\..\dist\c-api1\omp-lswtss-c-api1-main.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="omp-lswtss-asset-replacement">
+      <HintPath>..\..\..\dist\asset-replacement\omp-lswtss-asset-replacement.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 

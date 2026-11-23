@@ -14,6 +14,7 @@ public static class BuildAllNoCApi1
         BuildCFuncHook1.Execute();
         BuildInputHook1.Execute();
         BuildOverlay1.Execute();
+        BuildAssetReplacement.Execute();
         BuildV1.Execute();
         BuildDebugTools.Execute();
         BuildTestCefMod.Execute();

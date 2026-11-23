@@ -50,6 +50,15 @@ else if (commandName == "install-debug-tools")
     string gameDirPath = args[1];
     InstallDebugTools.Execute(gameDirPath);
 }
+else if (commandName == "build-asset-replacement")
+{
+    BuildAssetReplacement.Execute();
+}
+else if (commandName == "install-asset-replacement")
+{
+    string gameDirPath = args[1];
+    InstallAssetReplacement.Execute(gameDirPath);
+}
 else if (commandName == "build-v1")
 {
     BuildV1.Execute();

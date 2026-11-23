@@ -13,6 +13,8 @@ public static partial class V1
         IntPtr lpSecurityAttributes
     );
 
+    // Runtime-generated files (vehicle previews and icon sheets). Files declared in mod
+    // manifests go through AssetReplacement.RegisterModFile instead.
     static void LinkCustomResource(CustomResourceInfo customResourceInfo)
     {
         var currentDirectoryPath = Environment.CurrentDirectory;
@@ -30,12 +32,7 @@ public static partial class V1
 
         CreateHardLink(customResourceAbsolutePath, customResourceInfo.SrcPath, IntPtr.Zero);
 
-        _diskResourcesInfo.Add(
-            new DiskResourceInfo
-            {
-                CanonPath = GetResourceCanonPath(customResourceInfo.Path)
-            }
-        );
+        AssetReplacement.Register("v1", customResourceInfo.Path, out _);
 
         Console.WriteLine($"Linked custom resource: {customResourceInfo.Path}");
     }
