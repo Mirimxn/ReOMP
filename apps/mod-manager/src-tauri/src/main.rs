@@ -44,6 +44,9 @@ fn main() {
             commands::assets_extract,
             commands::draft_pick_file,
             commands::draft_build,
+            commands::set_file_winner,
+            commands::clear_file_winner,
+            commands::import_with_auto_version,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run the ReOMP Mod Manager");

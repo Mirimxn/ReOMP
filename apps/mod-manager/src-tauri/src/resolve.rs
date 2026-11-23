@@ -13,22 +13,34 @@ use crate::version::Version;
 pub struct Problem {
     pub mod_id: String,
     pub message: String,
+    /// Two mods placing the same files with no choice made yet.
+    #[serde(skip)]
+    pub pair: Option<(String, String)>,
 }
 
 #[derive(Debug, Default)]
 pub struct Selection {
     pub selected: BTreeMap<String, Version>,
     pub problems: Vec<Problem>,
+    /// Game paths (upper case) each mod gives up to a mod chosen over it.
+    pub skipped: BTreeMap<String, BTreeSet<String>>,
 }
 
 fn problem(problems: &mut Vec<Problem>, mod_id: &str, message: String) {
-    problems.push(Problem { mod_id: mod_id.to_string(), message });
+    problems.push(Problem { mod_id: mod_id.to_string(), message, pair: None });
 }
 
-pub fn resolve(
+pub fn resolve(library: &Library, enabled: &BTreeSet<String>, pinned: &BTreeMap<String, Version>) -> Selection {
+    resolve_with(library, enabled, pinned, &BTreeMap::new())
+}
+
+/// `winners` holds the player's choices for mods placing the same files
+/// (see `settings::pair_key`).
+pub fn resolve_with(
     library: &Library,
     enabled: &BTreeSet<String>,
     pinned: &BTreeMap<String, Version>,
+    winners: &BTreeMap<String, String>,
 ) -> Selection {
     let mut selection = Selection::default();
     let problems = &mut selection.problems;
@@ -101,21 +113,42 @@ pub fn resolve(
         }
     }
 
-    // Two enabled mods can't place the same game file.
-    let mut placed: BTreeMap<String, Vec<&String>> = BTreeMap::new();
+    // Two enabled mods can't place the same game file unless the player chose
+    // which one is used; the other gives up that file.
+    let mut placed: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (id, version) in &selection.selected {
         for resource in &library.packages[id][version].info.manifest.resources {
-            placed.entry(resource.path.to_lowercase()).or_default().push(id);
+            placed.entry(resource.path.clone()).or_default().push(id.clone());
         }
     }
+    let mut undecided: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
     for (path, owners) in placed.iter().filter(|(_, owners)| owners.len() > 1) {
-        let names: Vec<&str> = owners.iter().map(|s| s.as_str()).collect();
-        for id in owners {
-            problem(
-                problems,
-                id,
-                format!("{} both replace {}. Enable only one of them.", names.join(" and "), path.to_uppercase()),
-            );
+        let wins_all = owners.iter().find(|w| {
+            owners.iter().all(|o| o == *w || winners.get(&crate::settings::pair_key(w, o)) == Some(*w))
+        });
+        match wins_all {
+            Some(winner) => {
+                for other in owners.iter().filter(|o| *o != winner) {
+                    selection.skipped.entry(other.clone()).or_default().insert(path.clone());
+                }
+            }
+            None => {
+                for (i, a) in owners.iter().enumerate() {
+                    for b in &owners[i + 1..] {
+                        let pair = if a <= b { (a.clone(), b.clone()) } else { (b.clone(), a.clone()) };
+                        undecided.entry(pair).or_default().push(path.clone());
+                    }
+                }
+            }
+        }
+    }
+    for ((a, b), paths) in undecided {
+        let shown: Vec<&str> = paths.iter().take(3).map(String::as_str).collect();
+        let more = if paths.len() > 3 { format!(" and {} more", paths.len() - 3) } else { String::new() };
+        let count = if paths.len() == 1 { "a file".to_string() } else { format!("{} files", paths.len()) };
+        let message = format!("{a} and {b} both replace {count} ({}{more}). Choose which mod's files to use.", shown.join(", "));
+        for id in [&a, &b] {
+            problems.push(Problem { mod_id: id.clone(), message: message.clone(), pair: Some((a.clone(), b.clone())) });
         }
     }
 
@@ -248,7 +281,15 @@ mod tests {
         let s = resolve(&library, &set(&["red", "blue", "other"]), &BTreeMap::new());
         assert_eq!(s.problems.len(), 2, "{:?}", s.problems);
         assert!(s.problems[0].message.contains("CHARS/A.GHG"));
+        assert_eq!(s.problems[0].pair, Some(("blue".to_string(), "red".to_string())));
         assert!(resolve(&library, &set(&["red", "other"]), &BTreeMap::new()).problems.is_empty());
+
+        // Choosing red over blue settles it; blue gives up the file.
+        let winners = BTreeMap::from([(crate::settings::pair_key("red", "blue"), "red".to_string())]);
+        let s = resolve_with(&library, &set(&["red", "blue", "other"]), &BTreeMap::new(), &winners);
+        assert!(s.problems.is_empty(), "{:?}", s.problems);
+        assert_eq!(s.skipped["blue"], BTreeSet::from(["CHARS/A.GHG".to_string()]));
+        assert!(!s.skipped.contains_key("red"));
     }
 
     #[test]
