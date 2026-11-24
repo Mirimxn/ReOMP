@@ -500,6 +500,19 @@ fn import_bundled_from(core: &mut Core, core_dir: &std::path::Path, default_dir:
         // Skipped, not forced, if it would break the current selection.
         let _ = core.change(|s| s.enabled.extend(needed));
     }
+    // An updated core mod can need a core mod that is new in this release
+    // (v1 0.2.0 needs asset-replacement). Turn such bundled mods on, on every
+    // start, so an earlier update that missed it is fixed too.
+    let missing: BTreeSet<String> = core
+        .state
+        .enabled
+        .iter()
+        .flat_map(|id| core.with_dependencies(id))
+        .filter(|id| !core.state.enabled.contains(id) && core.bundled_ids.contains(id) && core.library.packages.contains_key(id))
+        .collect();
+    if !missing.is_empty() {
+        let _ = core.change(|s| s.enabled.extend(missing));
+    }
 }
 
 /// Called by the watcher thread. Returns true if another check is needed soon.
@@ -1114,6 +1127,36 @@ mod tests {
         core.state.enabled.remove("Invasion");
         import_bundled_from(&mut core, &core_dir, &default_dir);
         assert!(!core.state.enabled.contains("Invasion"));
+    }
+
+    #[test]
+    fn enables_a_new_core_mod_an_updated_one_needs() {
+        let root = temp_dir("bundled-new-dep");
+        let (library, core_dir, default_dir) = (root.join("library"), root.join("core"), root.join("default"));
+        for dir in [&library, &core_dir, &default_dir] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        // Installed before: v1 0.1.0, enabled.
+        write_mod(&library, "v1-0.1.0.zip", "v1", "0.1.0", &[("c-api1", "0.1.0")], "old");
+        write_mod(&library, "c-api1.zip", "c-api1", "0.1.0", &[], "x");
+        let mut core = core_with(&library, &["v1", "c-api1"]);
+        core.state_file = Some(root.join("state.json"));
+        // The new release: v1 0.2.0 needs asset-replacement, which is new.
+        write_mod(&core_dir, "v1.zip", "v1", "0.2.0", &[("c-api1", "0.1.0"), ("asset-replacement", "1.0.0")], "new");
+        write_mod(&core_dir, "c-api1.zip", "c-api1", "0.1.0", &[], "x");
+        write_mod(&core_dir, "asset-replacement.zip", "asset-replacement", "1.0.0", &[], "x");
+        write_mod(&core_dir, "unused.zip", "unused", "0.1.0", &[], "x");
+
+        import_bundled_from(&mut core, &core_dir, &default_dir);
+        let enabled: Vec<&str> = core.state.enabled.iter().map(String::as_str).collect();
+        assert_eq!(enabled, vec!["asset-replacement", "c-api1", "v1"]);
+        assert!(core.selection_for(&core.state).problems.is_empty());
+
+        // An earlier update that left it off is fixed on the next start.
+        core.state.enabled.remove("asset-replacement");
+        import_bundled_from(&mut core, &core_dir, &default_dir);
+        assert!(core.state.enabled.contains("asset-replacement"));
+        assert!(!core.state.enabled.contains("unused"));
     }
 
     #[test]
