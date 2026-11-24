@@ -26,6 +26,7 @@ type ModView = {
   selected: string | null;
   deployed: string | null;
   chosenOver: string[];
+  shares: { other: string; files: { path: string; used: string | null }[] }[];
   problems: string[];
 };
 type TargetView = {
@@ -58,11 +59,145 @@ type Outcome = {
   title: string;
   details: string[];
   offer?: string;
-  choices?: [string, string][];
+  choices?: { a: string; b: string; paths: string[] }[];
   retryEnable?: string;
   autoVersion?: string[];
 };
 type LegacyView = { id: string; name: string; folder: string };
+
+/// Lets the player use all of one mod's files where two mods replace the same
+/// ones, or pick a mod for each file.
+function FilePicker({
+  a,
+  b,
+  paths,
+  current,
+  startOpen,
+  onOutcome,
+}: {
+  a: string;
+  b: string;
+  paths: string[];
+  current: Record<string, string | null>;
+  startOpen: boolean;
+  onOutcome: (o: Outcome) => void;
+}) {
+  const [open, setOpen] = useState(startOpen);
+  const [picks, setPicks] = useState<Record<string, string>>(() =>
+    Object.fromEntries(paths.flatMap((p) => (current[p] ? [[p, current[p] as string]] : []))),
+  );
+  const [busy, setBusy] = useState(false);
+  const run = (call: Promise<Outcome>) => {
+    setBusy(true);
+    call.then(onOutcome).finally(() => setBusy(false));
+  };
+  const useAll = (winner: string, loser: string) => run(invoke<Outcome>("set_file_winner", { winner, loser, paths }));
+  const complete = paths.every((p) => picks[p]);
+  const apply = () => {
+    const winners = new Set(paths.map((p) => picks[p]));
+    if (winners.size === 1) {
+      const winner = picks[paths[0]];
+      useAll(winner, winner === a ? b : a);
+    } else {
+      run(invoke<Outcome>("set_file_choices", { choices: paths.map((p) => [p, picks[p]]) }));
+    }
+  };
+  const fill = (id: string) => setPicks(Object.fromEntries(paths.map((p) => [p, id])));
+  return (
+    <div className="file-picker">
+      <div className="choices">
+        <button disabled={busy} onClick={() => useAll(a, b)}>
+          Use all of {a}'s files
+        </button>
+        <button disabled={busy} onClick={() => useAll(b, a)}>
+          Use all of {b}'s files
+        </button>
+        <button className="link" onClick={() => setOpen(!open)}>
+          {open ? "Hide the file list" : `Choose file by file (${paths.length})`}
+        </button>
+      </div>
+      {open && (
+        <>
+          <table>
+            <tbody>
+              {paths.map((p) => (
+                <tr key={p}>
+                  <td className="path">{p}</td>
+                  {[a, b].map((id) => (
+                    <td key={id}>
+                      <button className={picks[p] === id ? "picked" : ""} onClick={() => setPicks({ ...picks, [p]: id })}>
+                        {id}
+                      </button>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="choices">
+            <button className="link" onClick={() => fill(a)}>
+              Pick {a} for every file
+            </button>
+            <button className="link" onClick={() => fill(b)}>
+              Pick {b} for every file
+            </button>
+            <button disabled={busy || !complete} onClick={apply}>
+              {complete ? "Use these choices" : "Pick a mod for each file"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ShareLine({ mod, share, onOutcome }: { mod: ModView; share: ModView["shares"][number]; onOutcome: (o: Outcome) => void }) {
+  const [changing, setChanging] = useState(false);
+  const mine = share.files.filter((f) => f.used === mod.id).length;
+  const theirs = share.files.filter((f) => f.used === share.other).length;
+  if (mine + theirs < share.files.length) {
+    // Still undecided (e.g. an update added a file the other mod replaces too).
+    // The problem line explains it; offer the choice for the open files.
+    const open = share.files.filter((f) => f.used === null).map((f) => f.path);
+    return <FilePicker a={mod.id} b={share.other} paths={open} current={{}} startOpen={false} onOutcome={onOutcome} />;
+  }
+  const paths = share.files.map((f) => f.path);
+  const summary =
+    theirs === 0
+      ? `Its files are used instead of ${share.other}'s for the ${mine === 1 ? "file" : `${mine} files`} both replace.`
+      : mine === 0
+        ? `${share.other}'s files are used instead of its own for the ${theirs === 1 ? "file" : `${theirs} files`} both replace.`
+        : `Shares ${share.files.length} files with ${share.other}: its own copy is used for ${mine}, ${share.other}'s for ${theirs}.`;
+  return (
+    <>
+      <p className="mod-description">
+        {summary}{" "}
+        <button className="link" onClick={() => setChanging(!changing)}>
+          {changing ? "Cancel" : "Change"}
+        </button>{" "}
+        <button
+          className="link"
+          onClick={() => invoke<Outcome>("clear_file_winner", { a: mod.id, b: share.other, paths }).then(onOutcome)}
+        >
+          Undo
+        </button>
+      </p>
+      {changing && (
+        <FilePicker
+          a={mod.id}
+          b={share.other}
+          paths={paths}
+          current={Object.fromEntries(share.files.map((f) => [f.path, f.used]))}
+          startOpen={mine > 0 && theirs > 0}
+          onOutcome={(o) => {
+            setChanging(false);
+            onOutcome(o);
+          }}
+        />
+      )}
+    </>
+  );
+}
 
 function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => void }) {
   const newest = mod.versions[0]?.version;
@@ -123,13 +258,8 @@ function ModRow({ mod, onOutcome }: { mod: ModView; onOutcome: (o: Outcome) => v
           {mod.selected ? ` (switching to ${mod.selected})` : mod.enabled ? "" : " (being removed)"}
         </p>
       )}
-      {mod.chosenOver.map((other) => (
-        <p key={other} className="mod-description">
-          Its files are used instead of {other}'s where both replace the same file.{" "}
-          <button className="link" onClick={() => invoke<Outcome>("clear_file_winner", { a: mod.id, b: other }).then(onOutcome)}>
-            Undo
-          </button>
-        </p>
+      {mod.shares.map((share) => (
+        <ShareLine key={share.other} mod={mod} share={share} onOutcome={onOutcome} />
       ))}
       {mod.problems.map((p) => (
         <p key={p} className="problem">
@@ -263,7 +393,7 @@ function DraftPanel({
         ))}
       </ul>
       <p className="hint">
-        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's v1 mod. When it's turned off, the game's own files
+        Use <em>Replace…</em> on a game file to add it. The mod needs OMP's asset-replacement mod. When it's turned off, the game's own files
         come back.
       </p>
       <div className="toolbar">
@@ -556,29 +686,21 @@ function App() {
               <li key={d}>{d}</li>
             ))}
           </ul>
-          {outcome.choices && outcome.choices.length > 0 && (
-            <div className="choices">
-              {outcome.choices.flatMap(([a, b]) =>
-                [
-                  [a, b],
-                  [b, a],
-                ].map(([winner, loser]) => (
-                  <button
-                    key={`${winner}>${loser}`}
-                    onClick={() =>
-                      invoke<Outcome>("set_file_winner", { winner, loser }).then((o) =>
-                        o.ok && outcome.retryEnable
-                          ? invoke<Outcome>("set_enabled", { id: outcome.retryEnable, enabled: true }).then(showOutcome)
-                          : showOutcome(o),
-                      )
-                    }
-                  >
-                    Use {winner}'s files over {loser}
-                  </button>
-                )),
-              )}
-            </div>
-          )}
+          {outcome.choices?.map(({ a, b, paths }) => (
+            <FilePicker
+              key={`${a}|${b}`}
+              a={a}
+              b={b}
+              paths={paths}
+              current={{}}
+              startOpen={false}
+              onOutcome={(o) =>
+                o.ok && outcome.retryEnable
+                  ? invoke<Outcome>("set_enabled", { id: outcome.retryEnable, enabled: true }).then(showOutcome)
+                  : showOutcome(o)
+              }
+            />
+          ))}
           {outcome.autoVersion && outcome.autoVersion.length > 0 && (
             <div className="auto-version">
               <p>

@@ -193,7 +193,7 @@ fn prepare(core: &mut Core) -> Prepared {
     let mut mods = Vec::new();
     let mut payload = None;
     if installing {
-        let selection = resolve::resolve_with(&core.library, &core.state.enabled, &core.state.pinned, &core.state.winners);
+        let selection = resolve::resolve_with(&core.library, &core.state.enabled, &core.state.pinned, &core.state.winners, &core.state.file_choices);
         reasons.extend(selection.problems.iter().map(|p| p.message.clone()));
         for (id, version) in &selection.selected {
             if let Some(entry) = core.library.version(id, *version) {

@@ -45,6 +45,7 @@ fn main() {
             commands::draft_pick_file,
             commands::draft_build,
             commands::set_file_winner,
+            commands::set_file_choices,
             commands::clear_file_winner,
             commands::import_with_auto_version,
         ])
