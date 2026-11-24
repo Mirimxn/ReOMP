@@ -33,8 +33,12 @@ public static partial class AssetReplacement
         }
     );
 
-    // A routed or hidden path is opened from the game folder. For a hidden path nothing is
-    // there, so the open fails as if the file didn't exist.
+    // A path in the game folder that never exists, for opening hidden files.
+    static readonly nint _missingPath = Marshal.StringToCoTaskMemUTF8("omp-hidden/this-file-is-hidden");
+
+    // A routed path is opened from the game folder. A hidden path is opened there under a
+    // name that doesn't exist, so the open fails as if the file didn't exist, even when a
+    // loose copy of the hidden file is in the game folder.
     static readonly CFuncHook1<CApi1.NuFileDeviceDat.CreateFileMethod.NativeDelegate> _createFileHook = new(
         CApi1.NuFileDeviceDat.CreateFileMethod.Info.NativePtr,
         (nativeDataRawPtr, arg0, arg1, arg2) =>
@@ -46,7 +50,20 @@ public static partial class AssetReplacement
                 {
                     NotifyRequest(path);
                     var canon = CanonPath(path);
-                    if (IsHidden(canon) || IsRegistered(canon))
+                    if (IsHidden(canon))
+                    {
+                        var requested = Marshal.ReadIntPtr(arg1);
+                        Marshal.WriteIntPtr(arg1, _missingPath);
+                        try
+                        {
+                            return _hostDevice.CreateFile(arg0, arg1, arg2);
+                        }
+                        finally
+                        {
+                            Marshal.WriteIntPtr(arg1, requested);
+                        }
+                    }
+                    if (IsRegistered(canon))
                     {
                         return _hostDevice.CreateFile(arg0, arg1, arg2);
                     }

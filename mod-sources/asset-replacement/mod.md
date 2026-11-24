@@ -26,6 +26,6 @@ Reference `omp-lswtss-asset-replacement.dll` with `<Private>false</Private>`. Al
 | `IsRegistered(path)` | Whether a lookup for `path` is routed. |
 | `RegisterModFile(modId, modDirPath, path, srcPath)` | What the manifest action does, for providers that forward their own resource actions. |
 | `AddRequestObserver(owner, Action<string> observer)` | Called with the requested path for every file the game opens from its archives. Returns an `IDisposable` that removes it. |
-| `AddHideFilter(owner, Func<string, bool> isHidden)` | Given the canonical path; returning `true` makes the game's lookup fail as if the file didn't exist. Returns an `IDisposable`. |
+| `AddHideFilter(owner, Func<string, bool> isHidden)` | Given the canonical path; returning `true` makes the game's lookup fail as if the file didn't exist, even when a loose copy is in the game folder. Returns an `IDisposable`. |
 
 Observers and filters run on the game's loading thread in registration order. An exception in one is logged and doesn't affect the others or the game's lookup.
