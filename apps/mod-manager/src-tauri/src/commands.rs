@@ -867,6 +867,112 @@ pub async fn assets_search(app: AppHandle, query: String, folder: String) -> Res
     Ok(AssetListing { folders: Vec::new(), files: files.into_iter().map(|i| crate::assets::ItemView::of(&index, i)).collect(), more })
 }
 
+/// Every file in the game index for the character maker, as text: the first line
+/// lists the archive names (tab-separated), then one `<source>\t<path>` line per
+/// file, where `<source>` is the archive's position or `L` for a loose file.
+#[tauri::command]
+pub async fn assets_paths(app: AppHandle) -> Result<tauri::ipc::Response, String> {
+    let index = asset_index(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut out = String::with_capacity(index.items.len() * 64);
+        let names: Vec<String> = index
+            .archives
+            .iter()
+            .map(|a| a.file.file_name().unwrap_or_default().to_string_lossy().into_owned())
+            .collect();
+        out.push_str(&names.join("\t"));
+        out.push('\n');
+        for item in &index.items {
+            if item.source == crate::assets::LOOSE {
+                out.push('L');
+            } else {
+                out.push_str(&item.source.to_string());
+            }
+            out.push('\t');
+            out.push_str(&item.path);
+            out.push('\n');
+        }
+        tauri::ipc::Response::new(out.into_bytes())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// One game file's bytes, for the character maker.
+#[tauri::command]
+pub async fn assets_read(app: AppHandle, path: String, source: u32) -> Result<tauri::ipc::Response, String> {
+    let index = asset_index(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let item = index.find(&path, source).ok_or_else(|| format!("{path} isn't in the game index"))?;
+        let codecs = crate::assets::GameCodecs::for_game(&index.game_dir);
+        index.read(item, &codecs).map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// A file name for a mod ZIP made in the app: letters, digits, `-`, `_` and `.`,
+/// ending in `.zip`.
+fn package_file_name(name: &str) -> String {
+    let stem = name.trim().trim_end_matches(".zip").trim_end_matches(".ZIP");
+    let clean: String = stem
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' })
+        .collect();
+    let clean = clean.trim_matches(|c| c == '.' || c == '-').to_string();
+    format!("{}.zip", if clean.is_empty() { "mod".to_string() } else { clean })
+}
+
+/// A mod ZIP made by the character maker (the request body, file name in the
+/// `file-name` header). With `to-library: 1` it goes through the same import as
+/// a dropped ZIP; otherwise the player picks where to save it.
+#[tauri::command]
+pub async fn package_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<Outcome, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the ZIP as the request body".into());
+    };
+    let bytes = bytes.clone();
+    let header = |name: &str| request.headers().get(name).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let file_name = package_file_name(&header("file-name").unwrap_or_default());
+    let to_library = header("to-library").as_deref() == Some("1");
+    tauri::async_runtime::spawn_blocking(move || {
+        if to_library {
+            let temp_dir = {
+                let state = app.state::<AppState>();
+                let core = lock(&state);
+                core.deploy.data_dir.as_ref().map(|d| d.join("tmp"))
+            };
+            let Some(temp_dir) = temp_dir else {
+                return Outcome::rejected("The mod library isn't available.", None::<String>);
+            };
+            let zip = temp_dir.join(&file_name);
+            if let Err(e) = std::fs::create_dir_all(&temp_dir).and_then(|_| std::fs::write(&zip, &bytes)) {
+                return Outcome::rejected("Couldn't prepare the mod:", Some(e.to_string()));
+            }
+            let outcome = import_paths(&app, vec![zip.clone()]);
+            let _ = std::fs::remove_file(&zip);
+            outcome
+        } else {
+            let Some(picked) = app
+                .dialog()
+                .file()
+                .set_title("Save the mod ZIP")
+                .set_file_name(&file_name)
+                .add_filter("Mod ZIP", &["zip"])
+                .blocking_save_file()
+            else {
+                return Outcome::ok(Vec::new());
+            };
+            match picked.into_path().map_err(|e| e.to_string()).and_then(|out| std::fs::write(&out, &bytes).map(|_| out).map_err(|e| e.to_string())) {
+                Ok(out) => Outcome::ok(vec![format!("Saved {}.", out.display())]),
+                Err(e) => Outcome::rejected("Couldn't save the mod:", Some(e)),
+            }
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[derive(serde::Deserialize)]
 pub struct AssetRef {
     path: String,
@@ -1127,6 +1233,14 @@ mod tests {
         core.state.enabled.remove("Invasion");
         import_bundled_from(&mut core, &core_dir, &default_dir);
         assert!(!core.state.enabled.contains("Invasion"));
+    }
+
+    #[test]
+    fn package_file_names_are_plain() {
+        assert_eq!(package_file_name("omp-airborne-trooper-1.0.0.zip"), "omp-airborne-trooper-1.0.0.zip");
+        assert_eq!(package_file_name("../../evil name"), "evil-name.zip");
+        assert_eq!(package_file_name("C:\\x\\y.zip"), "C--x-y.zip");
+        assert_eq!(package_file_name(""), "mod.zip");
     }
 
     #[test]

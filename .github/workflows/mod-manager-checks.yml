@@ -7,9 +7,9 @@ name: Mod Manager checks
 on:
   push:
     branches-ignore: [main]
-    paths: ["apps/mod-manager/**", ".github/workflows/mod-manager-checks.yml"]
+    paths: ["apps/mod-manager/**", "tools/minifig-viewer/**", ".github/workflows/mod-manager-checks.yml"]
   pull_request:
-    paths: ["apps/mod-manager/**", ".github/workflows/mod-manager-checks.yml"]
+    paths: ["apps/mod-manager/**", "tools/minifig-viewer/**", ".github/workflows/mod-manager-checks.yml"]
   workflow_dispatch:
 
 concurrency:

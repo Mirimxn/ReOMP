@@ -56,7 +56,8 @@ function namedPieces(all,table,bones){if(!table.length||!bones)return null;
     if(o){const better=(pc.mat>=0)-(o.mat>=0)||pc.pos.length-o.pos.length;if(better<=0)continue;out.splice(out.indexOf(o),1);}
     out.push(Object.assign(pc,{mesh:best.name,variant,bmn:mn,bmx:mx}));}
   return out.length?out:null;}
-function parseModel(buf){
+// the mesh parts of a .gsc/.ghg as stored: vertex lists, index lists and each part's ranges
+function meshParts(buf){
   const u8=new Uint8Array(buf),dv=new DataView(buf);const be=(p)=>dv.getUint32(p,false);
   const find=(s,from)=>{const c=[...s].map(ch=>ch.charCodeAt(0));outer:for(let i=from||0;i<u8.length-c.length;i++){for(let k=0;k<c.length;k++)if(u8[i+k]!=c[k])continue outer;return i;}return -1;};
   const SS=[0,0,8,12,16,4,8,4,4,4];
@@ -79,17 +80,32 @@ function parseModel(buf){
   }
   // a part's vertex data can be split over several streams (positions in one list, UVs and skin weights in another)
   const listWith=(P,v)=>{for(const k of P.lists){const L=lists[k];if(L&&L.defs.some(d=>d[0]==v))return L;}return null;};
+  const readPos=(P,j)=>{const L=listWith(P,VAR_POS);const d=L.defs.find(x=>x[0]==VAR_POS);const o=L.data+j*L.stride+d[2];
+    if(d[1]==6||d[1]==5)return [halfToFloat(dv.getUint16(o,true)),halfToFloat(dv.getUint16(o+2,true)),d[1]==6?halfToFloat(dv.getUint16(o+4,true)):0];
+    return [dv.getFloat32(o,true),dv.getFloat32(o+4,true),dv.getFloat32(o+8,true)];};
+  const readUV=(P,j,set)=>{const L=listWith(P,VAR_UV01);if(!L)return [0,0];const d=L.defs.find(x=>x[0]==VAR_UV01);const o=L.data+j*L.stride+d[2];
+    const k=(set==1&&d[1]==6)?4:0;return [halfToFloat(dv.getUint16(o+k,true)),halfToFloat(dv.getUint16(o+k+2,true))];};
+  return {u8,dv,parts,lists,idxs,listWith,readPos,readUV};
+}
+
+// the standard minifig body from the game's super_minifig_dx11.ghg: its most detailed piece for each
+// body slot (part number -> slot), in the layout the page used to carry built in
+const MINIFIG_BODY_PARTS=[[0,'head'],[3,'hands'],[4,'arm_l'],[5,'arm_r'],[6,'body_front'],[7,'body_back'],[10,'waist'],[12,'hips'],[11,'leg_r'],[13,'leg_l'],[15,'neck']];
+function minifigBody(buf){const M=meshParts(buf);
+  return MINIFIG_BODY_PARTS.map(([i,slot])=>{const P=M.parts[i];if(!P||!M.idxs[P.idx])throw new Error('this is not the standard minifig body (part '+i+' missing)');
+    const pos=new Float32Array(P.vcnt*3),uv0=new Float32Array(P.vcnt*2),uv=new Float32Array(P.vcnt*2);
+    for(let j=0;j<P.vcnt;j++){pos.set(M.readPos(P,P.voff+j),j*3);uv0.set(M.readUV(P,P.voff+j,0),j*2);uv.set(M.readUV(P,P.voff+j,1),j*2);}
+    const I=M.idxs[P.idx];const idx=new Uint16Array(P.icnt);for(let k=0;k<P.icnt;k++)idx[k]=M.dv.getUint16(I.data+2*(P.ioff+k),true);
+    return {slot,pos,uv0,uv,idx};});}
+
+function parseModel(buf){
+  const {u8,dv,parts,lists,idxs,listWith,readPos,readUV}=meshParts(buf);
   const has=(P,v)=>!!listWith(P,v);
   // which material each part draws with: LTMU names (variants and shadow impostors aside) and the PSID draw list
   const mats=materialNames(u8,dv);const pm=partMaterials(u8,dv,parts.length,mats.length);parts.forEach((P,i)=>P.mat=pm?pm[i]:-1);
   let use=parts.filter(P=>has(P,VAR_POS));const textured=use.filter(P=>has(P,VAR_UV01));if(textured.length)use=textured;
   let rigidUse=[];
   if(use.some(P=>has(P,VAR_BLEND))){rigidUse=use.filter(P=>!has(P,VAR_BLEND));use=use.filter(P=>has(P,VAR_BLEND));}   // skinned model: the rest are posed copies and break-up pieces
-  const readPos=(P,j)=>{const L=listWith(P,VAR_POS);const d=L.defs.find(x=>x[0]==VAR_POS);const o=L.data+j*L.stride+d[2];
-    if(d[1]==6||d[1]==5)return [halfToFloat(dv.getUint16(o,true)),halfToFloat(dv.getUint16(o+2,true)),d[1]==6?halfToFloat(dv.getUint16(o+4,true)):0];
-    return [dv.getFloat32(o,true),dv.getFloat32(o+4,true),dv.getFloat32(o+8,true)];};
-  const readUV=(P,j,set)=>{const L=listWith(P,VAR_UV01);if(!L)return [0,0];const d=L.defs.find(x=>x[0]==VAR_UV01);const o=L.data+j*L.stride+d[2];
-    const k=(set==1&&d[1]==6)?4:0;return [halfToFloat(dv.getUint16(o+k,true)),halfToFloat(dv.getUint16(o+k+2,true))];};
   // one copy of each piece: detail levels repeat a piece with the same bounds, keep the most detailed
   const build=(list)=>{const groups=[];
     for(const P of list){if(!idxs[P.idx]||P.icnt<3)continue;const key=P.lists.join(',')+'|'+P.mat;
@@ -111,4 +127,4 @@ function parseModel(buf){
     if(np){pieces=np;rigid=[];variants=[...new Set(np.map(p=>p.variant).filter(Boolean))].sort();}}
   return {pieces,rigid,skinned,hasUV1,bones,materials:mats,variants};
 }
-if(typeof module!='undefined')module.exports={parseModel,mul4};
+if(typeof module!='undefined')module.exports={parseModel,mul4,minifigBody,meshParts};

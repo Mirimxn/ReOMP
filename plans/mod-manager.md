@@ -33,6 +33,16 @@ Import the installer-bundled core mod ZIPs into the library on first launch and 
 5. Generate a normal ZIP with one mod folder, the supplied replacement files, and the `mod.json` actions and dependency from the [asset replacement contract](mods/asset-replacement.md#package-contract). **Export ZIP** saves a shareable file. **Add to library** uses the normal import path. Enabling uses the same dependency, path collision and game-close checks as any other mod. The selected browse target supplies the authoring catalogue. Deployment checks the declared game paths and prepares the manager-owned replacement copies for every enabled target under the same receipt and rollback rules.
 6. Verify browsing against real Windows archives. Compare paths and extracted hashes for at least one file per supported codec, including a multi-chunk entry. Exercise truncated indexes, invalid offsets, duplicate paths, and an unavailable codec. From the UI, build a two-file mod, export and reimport it, enable it, check that the game loads the replacements, then disable it and confirm original lookup resumes. Check archive hashes before and after. Linux runtime verification follows with Linux users.
 
+## Character maker
+
+The Characters tab hosts the character maker from `tools/minifig-viewer`, built by `scripts/build-character-maker.mjs` into `public/character-maker.html` with `manager.js` as its bridge. It carries no game files: the minifig body (`super_minifig_dx11.ghg`, parts 0, 3–7, 10–13 and 15) and every character, model and texture come from the game index through `assets_paths` and `assets_read`. Its mods declare their files with `asset-replacement/register`, depend on `v1` ≥ 0.2.0 and `asset-replacement` ≥ 1.0.0, carry a version, and go to the library through `package_bytes` (the same import as a dropped ZIP) or a save dialog.
+
+Steps:
+
+1. Host the maker, read the game through the manager and add its mods to the library. Verify a new character and a replacement made in the tab, enabled, in game.
+2. Update a character the player made: rebuild it from the library copy and import it as the next version (replaces the standalone page's "update the mod in the game folder" mode, which is hidden in the tab).
+3. Files dropped on the tab go to the maker instead of the mod import.
+
 ## Selection and automatic deployment
 
 1. Resolve each enabled mod to its highest installed version by default. A per-mod override selects an exact installed version until cleared. Show the selected and deployed versions when they differ. A missing override is an error. If an archive used by the last successful deployment disappears externally, keep that deployment and show the missing package. The player can restore the ZIP or select another available version.

@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 // Tauri's global API (app.withGlobalTauri). The backend owns all file work.
@@ -411,6 +411,60 @@ function DraftPanel({
   );
 }
 
+/// The character maker (tools/minifig-viewer, built into public/character-maker.html).
+/// It reads the game through the same index as the Game files tab, so that is opened
+/// first, and its finished mods go through the normal import.
+function Characters({ targets }: { targets: TargetView[] }) {
+  const available = targets.filter((t) => t.path);
+  const [kind, setKind] = useState(available[0]?.kind ?? "steam");
+  const [opened, setOpened] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = (k: string) => {
+    setOpening(true);
+    setError(null);
+    setOpened(null);
+    invoke<AssetSummary>("assets_open", { kind: k })
+      .then(() => setOpened(`${k}-${Date.now()}`))
+      .catch((e) => setError(String(e)))
+      .finally(() => setOpening(false));
+  };
+  useEffect(() => {
+    if (available.length > 0) open(kind);
+    // Open once when the tab is first shown; the button reopens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (available.length === 0) {
+    return (
+      <section>
+        <h2>Character maker</h2>
+        <p className="hint">Choose your game folder in the Mods tab first. The character maker reads the characters, models and textures from it.</p>
+      </section>
+    );
+  }
+  return (
+    <section className="characters">
+      <div className="asset-bar">
+        {available.length > 1 && (
+          <select value={kind} onChange={(e) => setKind(e.target.value as TargetView["kind"])} aria-label="Game">
+            {available.map((t) => (
+              <option key={t.kind} value={t.kind}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        )}
+        <button disabled={opening} onClick={() => open(kind)}>
+          {opening ? "Reading the game files…" : "Reload game files"}
+        </button>
+        <span className="hint">To add your own textures or models, use the page's Load files… button. Dropping files onto it doesn't work here yet.</span>
+      </div>
+      {error && <p className="problem">{error}</p>}
+      {opened && <iframe key={opened} className="character-maker" src="character-maker.html" title="Character maker" />}
+    </section>
+  );
+}
+
 function GameFiles({ targets }: { targets: TargetView[] }) {
   const available = targets.filter((t) => t.path);
   const [kind, setKind] = useState(available[0]?.kind ?? "steam");
@@ -595,7 +649,9 @@ function App() {
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"mods" | "files">("mods");
+  const [tab, setTab] = useState<"mods" | "files" | "characters">("mods");
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
 
   const refresh = useCallback(() => {
     invoke<LibraryView>("get_library").then(setLibrary);
@@ -625,6 +681,8 @@ function App() {
       listen<unknown>("tauri://drag-leave", () => setDragging(false)),
       listen<{ paths: string[] }>("tauri://drag-drop", ({ paths }) => {
         setDragging(false);
+        // On the Characters tab a drop is meant for the character maker, not a mod import.
+        if (tabRef.current === "characters") return;
         runImport(() => invoke<Outcome>("import_zips", { paths }));
       }),
     ];
@@ -634,7 +692,7 @@ function App() {
   if (!library) return <main className="app">Loading…</main>;
 
   return (
-    <main className={`app${dragging ? " dragging" : ""}`}>
+    <main className={`app${dragging && tab !== "characters" ? " dragging" : ""}`}>
       <header>
         <h1>ReOMP Mod Manager</h1>
         <nav className="tabs">
@@ -643,6 +701,9 @@ function App() {
           </button>
           <button className={tab === "files" ? "active" : ""} onClick={() => setTab("files")}>
             Game files
+          </button>
+          <button className={tab === "characters" ? "active" : ""} onClick={() => setTab("characters")}>
+            Characters
           </button>
         </nav>
         {tab === "mods" ? (
@@ -655,6 +716,7 @@ function App() {
       </header>
 
       {tab === "files" && <GameFiles targets={library.targets} />}
+      {tab === "characters" && <Characters targets={library.targets} />}
       <div hidden={tab !== "mods"}>
       <section>
         <h2>Game</h2>
@@ -786,7 +848,7 @@ function App() {
         </section>
       )}
       </div>
-      {dragging && <div className="drop-overlay">Drop mod ZIPs to add them</div>}
+      {dragging && tab !== "characters" && <div className="drop-overlay">Drop mod ZIPs to add them</div>}
     </main>
   );
 }
