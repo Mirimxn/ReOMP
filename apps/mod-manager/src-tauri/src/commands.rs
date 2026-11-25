@@ -891,12 +891,26 @@ pub async fn assets_search(app: AppHandle, query: String, folder: String) -> Res
     Ok(AssetListing { folders: Vec::new(), files: files.into_iter().map(|i| crate::assets::ItemView::of(&index, i)).collect(), more })
 }
 
-/// Every file in the game index for the character maker, as text: the first line
+/// Every file the game loads, for the character maker, as text: the first line
 /// lists the archive names (tab-separated), then one `<source>\t<path>` line per
 /// file, where `<source>` is the archive's position or `L` for a loose file.
+/// Loose files are listed only when an installed mod declares them (the game
+/// loads those through asset-replacement); other loose files in the game folder
+/// are leftovers the game never reads, so the archive copy is listed instead.
 #[tauri::command]
 pub async fn assets_paths(app: AppHandle) -> Result<tauri::ipc::Response, String> {
     let index = asset_index(&app)?;
+    let canon = |p: &str| p.replace('\\', "/").trim_start_matches('/').to_ascii_lowercase();
+    let loaded: std::collections::HashSet<String> = {
+        let state = app.state::<AppState>();
+        let core = lock(&state);
+        core.deploy
+            .receipts
+            .values()
+            .filter(|r| r.game_dir == index.game_dir)
+            .flat_map(|r| r.resources.keys().map(|p| canon(p)))
+            .collect()
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let mut out = String::with_capacity(index.items.len() * 64);
         let names: Vec<String> = index
@@ -908,6 +922,9 @@ pub async fn assets_paths(app: AppHandle) -> Result<tauri::ipc::Response, String
         out.push('\n');
         for item in &index.items {
             if item.source == crate::assets::LOOSE {
+                if !loaded.contains(&canon(&item.path)) {
+                    continue;
+                }
                 out.push('L');
             } else {
                 out.push_str(&item.source.to_string());

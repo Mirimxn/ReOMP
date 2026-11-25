@@ -35,7 +35,7 @@ Import the installer-bundled core mod ZIPs into the library on first launch and 
 
 ## Character maker
 
-The Characters tab hosts the character maker from `tools/minifig-viewer`, built by `scripts/build-character-maker.mjs` into `public/character-maker.html` with `manager.js` as its bridge. It carries no game files: the minifig body (`super_minifig_dx11.ghg`, parts 0, 3–7, 10–13 and 15) and every character, model and texture come from the game index through `assets_paths` and `assets_read`. Its mods declare their files with `asset-replacement/register`, depend on `v1` ≥ 0.2.0 and `asset-replacement` ≥ 1.0.0, carry a version, and go to the library through `package_bytes` (the same import as a dropped ZIP) or a save dialog.
+The Characters tab hosts the character maker from `tools/minifig-viewer`, built by `scripts/build-character-maker.mjs` into `public/character-maker.html` with `manager.js` as its bridge. It shows what the game loads: archive files, and loose files only where an installed mod declares them. It carries no game files: the minifig body (`super_minifig_dx11.ghg`, parts 0, 3–7, 10–13 and 15) and every character, model and texture come from the game index through `assets_paths` and `assets_read`. Its mods declare their files with `asset-replacement/register`, depend on `v1` ≥ 0.2.0 and `asset-replacement` ≥ 1.0.0, carry a version, and go to the library through `package_bytes` (the same import as a dropped ZIP) or a save dialog.
 
 Steps:
 

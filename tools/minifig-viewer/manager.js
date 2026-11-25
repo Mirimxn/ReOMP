@@ -35,7 +35,7 @@ window.MM=(()=>{
       for(let i=1;i<lines.length;i++){const line=lines[i];if(!line)continue;const tab=line.indexOf('\t');
         const path=line.slice(tab+1);if(!WANT.test(path))continue;
         const src=line.slice(0,tab);const loose=src=='L';
-        addEntry(path,{mm:{path,source:loose?LOOSE:Number(src)},src:loose?'folder':archives[Number(src)]||'archive'});
+        addEntry(path,{mm:{path,source:loose?LOOSE:Number(src)},src:loose?'installed mod':archives[Number(src)]||'archive'});
         if(loose)GAME.loose++;}
       const body=findGame(BODY_PATH);
       if(!body)throw new Error(BODY_PATH+' is not in the game files');
