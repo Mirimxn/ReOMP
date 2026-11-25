@@ -70,7 +70,7 @@ impl Core {
             }
         }
         let current = self.selection_for(&self.state).problems;
-        let after = resolve::resolve_with(&proposed, &self.state.enabled, &self.state.pinned, &self.state.winners).problems;
+        let after = resolve::resolve_with(&proposed, &self.state.enabled, &self.state.pinned, &self.state.winners, &self.state.file_choices).problems;
         let added: Vec<String> = after.into_iter().filter(|p| !current.contains(p)).map(|p| p.message).collect();
         if !added.is_empty() {
             let mut details = added;
@@ -121,7 +121,7 @@ impl Core {
     }
 
     fn selection_for(&self, state: &ManagerState) -> resolve::Selection {
-        resolve::resolve_with(&self.library, &state.enabled, &state.pinned, &state.winners)
+        resolve::resolve_with(&self.library, &state.enabled, &state.pinned, &state.winners, &state.file_choices)
     }
 
     /// Applies a change to the saved selection only if it adds no new problems.
@@ -136,9 +136,12 @@ impl Core {
             .filter(|p| !current.contains(p))
             .collect();
         if !added.is_empty() {
-            let mut choices: Vec<(String, String)> = added.iter().filter_map(|p| p.pair.clone()).collect();
-            choices.sort();
-            choices.dedup();
+            let mut choices: Vec<Choice> = added
+                .iter()
+                .filter_map(|p| p.pair.clone().map(|(a, b)| Choice { a, b, paths: p.paths.clone() }))
+                .collect();
+            choices.sort_by(|x, y| (&x.a, &x.b).cmp(&(&y.a, &y.b)));
+            choices.dedup_by(|x, y| x.a == y.a && x.b == y.b);
             let mut outcome = Outcome::rejected("That change was blocked, so nothing changed:", added.iter().map(|p| p.message.clone()));
             outcome.details.sort();
             outcome.details.dedup();
@@ -157,6 +160,31 @@ impl Core {
     }
 }
 
+/// Two mods (sorted) and the game paths both place that still need a choice.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Choice {
+    a: String,
+    b: String,
+    paths: Vec<String>,
+}
+
+/// Files this mod and `other` both place, with whose copy each uses.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareView {
+    other: String,
+    files: Vec<SharedFile>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SharedFile {
+    path: String,
+    /// The mod whose copy is used, or none while the clash is undecided.
+    used: Option<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Outcome {
@@ -166,9 +194,9 @@ pub struct Outcome {
     /// A mod that can be enabled together with the mods it needs.
     #[serde(skip_serializing_if = "Option::is_none")]
     offer: Option<String>,
-    /// Pairs of mods placing the same files; the player picks one of each.
+    /// Pairs of mods placing the same files; the player picks whose files to use.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    choices: Vec<(String, String)>,
+    choices: Vec<Choice>,
     /// The mod being enabled when the change was blocked, to retry after a choice.
     #[serde(skip_serializing_if = "Option::is_none")]
     retry_enable: Option<String>,
@@ -217,6 +245,8 @@ pub struct ModView {
     deployed: Option<Version>,
     /// Mods whose shared files this mod's files were chosen over.
     chosen_over: Vec<String>,
+    /// Other enabled mods placing some of the same files.
+    shares: Vec<ShareView>,
     problems: Vec<String>,
 }
 
@@ -297,6 +327,26 @@ fn view(core: &Core) -> LibraryView {
                     .filter_map(|(key, _)| key.split('|').find(|other| *other != id.as_str()).map(str::to_string))
                     .collect(),
                 deployed: core.deploy.receipts.values().find_map(|r| r.mods.get(id.as_str()).map(|m| m.version)),
+                shares: selection
+                    .shared
+                    .iter()
+                    .filter_map(|((a, b), paths)| {
+                        let other = if a == id { b } else if b == id { a } else { return None };
+                        let gives_up = |m: &String, p: &String| selection.skipped.get(m).is_some_and(|s| s.contains(p));
+                        let files = paths
+                            .iter()
+                            .map(|path| SharedFile {
+                                path: path.clone(),
+                                used: match (gives_up(id, path), gives_up(other, path)) {
+                                    (false, true) => Some(id.clone()),
+                                    (true, false) => Some(other.clone()),
+                                    _ => None,
+                                },
+                            })
+                            .collect();
+                        Some(ShareView { other: other.clone(), files })
+                    })
+                    .collect(),
                 problems: selection.problems.iter().filter(|p| &p.mod_id == id).map(|p| p.message.clone()).collect(),
             }
         })
@@ -449,6 +499,19 @@ fn import_bundled_from(core: &mut Core, core_dir: &std::path::Path, default_dir:
         let needed = core.with_dependencies(&id);
         // Skipped, not forced, if it would break the current selection.
         let _ = core.change(|s| s.enabled.extend(needed));
+    }
+    // An updated core mod can need a core mod that is new in this release
+    // (v1 0.2.0 needs asset-replacement). Turn such bundled mods on, on every
+    // start, so an earlier update that missed it is fixed too.
+    let missing: BTreeSet<String> = core
+        .state
+        .enabled
+        .iter()
+        .flat_map(|id| core.with_dependencies(id))
+        .filter(|id| !core.state.enabled.contains(id) && core.bundled_ids.contains(id) && core.library.packages.contains_key(id))
+        .collect();
+    if !missing.is_empty() {
+        let _ = core.change(|s| s.enabled.extend(missing));
     }
 }
 
@@ -935,21 +998,56 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
     .map_err(|e| e.to_string())
 }
 
-/// Records which of two mods' shared files to use.
+/// Uses all of `winner`'s files where it and `loser` place the same ones.
+/// File-by-file choices for `paths` (the pair's shared files) are dropped so
+/// the one-click choice covers every file.
 #[tauri::command]
-pub async fn set_file_winner(app: AppHandle, state: State<'_, AppState>, winner: String, loser: String) -> Result<Outcome, String> {
+pub async fn set_file_winner(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    winner: String,
+    loser: String,
+    paths: Option<Vec<String>>,
+) -> Result<Outcome, String> {
     let outcome = lock(&state).change(|s| {
         s.winners.insert(crate::settings::pair_key(&winner, &loser), winner.clone());
+        for path in paths.iter().flatten() {
+            s.file_choices.remove(path);
+        }
     });
     notify(&app);
     Ok(outcome)
 }
 
-/// Forgets a choice between two mods; if both stay enabled, the clash is reported again.
+/// Records whose copy to use for each listed game path, as `[path, mod]`.
 #[tauri::command]
-pub async fn clear_file_winner(app: AppHandle, state: State<'_, AppState>, a: String, b: String) -> Result<Outcome, String> {
+pub async fn set_file_choices(app: AppHandle, state: State<'_, AppState>, choices: Vec<(String, String)>) -> Result<Outcome, String> {
+    let outcome = lock(&state).change(|s| {
+        for (path, winner) in &choices {
+            s.file_choices.insert(path.clone(), winner.clone());
+        }
+    });
+    notify(&app);
+    Ok(outcome)
+}
+
+/// Forgets the choices between two mods, including file-by-file choices for
+/// `paths`; if both stay enabled, the clash is reported again.
+#[tauri::command]
+pub async fn clear_file_winner(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    a: String,
+    b: String,
+    paths: Option<Vec<String>>,
+) -> Result<Outcome, String> {
     let outcome = lock(&state).change(|s| {
         s.winners.remove(&crate::settings::pair_key(&a, &b));
+        for path in paths.iter().flatten() {
+            if s.file_choices.get(path).is_some_and(|w| *w == a || *w == b) {
+                s.file_choices.remove(path);
+            }
+        }
     });
     notify(&app);
     Ok(outcome)
@@ -1029,6 +1127,36 @@ mod tests {
         core.state.enabled.remove("Invasion");
         import_bundled_from(&mut core, &core_dir, &default_dir);
         assert!(!core.state.enabled.contains("Invasion"));
+    }
+
+    #[test]
+    fn enables_a_new_core_mod_an_updated_one_needs() {
+        let root = temp_dir("bundled-new-dep");
+        let (library, core_dir, default_dir) = (root.join("library"), root.join("core"), root.join("default"));
+        for dir in [&library, &core_dir, &default_dir] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        // Installed before: v1 0.1.0, enabled.
+        write_mod(&library, "v1-0.1.0.zip", "v1", "0.1.0", &[("c-api1", "0.1.0")], "old");
+        write_mod(&library, "c-api1.zip", "c-api1", "0.1.0", &[], "x");
+        let mut core = core_with(&library, &["v1", "c-api1"]);
+        core.state_file = Some(root.join("state.json"));
+        // The new release: v1 0.2.0 needs asset-replacement, which is new.
+        write_mod(&core_dir, "v1.zip", "v1", "0.2.0", &[("c-api1", "0.1.0"), ("asset-replacement", "1.0.0")], "new");
+        write_mod(&core_dir, "c-api1.zip", "c-api1", "0.1.0", &[], "x");
+        write_mod(&core_dir, "asset-replacement.zip", "asset-replacement", "1.0.0", &[], "x");
+        write_mod(&core_dir, "unused.zip", "unused", "0.1.0", &[], "x");
+
+        import_bundled_from(&mut core, &core_dir, &default_dir);
+        let enabled: Vec<&str> = core.state.enabled.iter().map(String::as_str).collect();
+        assert_eq!(enabled, vec!["asset-replacement", "c-api1", "v1"]);
+        assert!(core.selection_for(&core.state).problems.is_empty());
+
+        // An earlier update that left it off is fixed on the next start.
+        core.state.enabled.remove("asset-replacement");
+        import_bundled_from(&mut core, &core_dir, &default_dir);
+        assert!(core.state.enabled.contains("asset-replacement"));
+        assert!(!core.state.enabled.contains("unused"));
     }
 
     #[test]

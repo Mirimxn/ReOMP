@@ -1,0 +1,39 @@
+{
+  "name": "Asset Replacement",
+  "version": "1.0.1",
+  "description": "Routes the game's file lookups to mod-supplied game files and owns the game's file-loading hooks.",
+  "actions": [
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-asset-replacement",
+        "path": "omp-lswtss-asset-replacement.dll"
+      }
+    },
+    {
+      "typeId": "register-mod-action-type-action",
+      "payload": {
+        "id": "asset-replacement/register",
+        "executeModActionSharedAssemblyName": "omp-lswtss-asset-replacement",
+        "executeModActionStaticTypeName": "OMP.LSWTSS.AssetReplacement+RegisterAction"
+      }
+    },
+    {
+      "typeId": "register-scripting-module-action",
+      "payload": {
+        "typeName": "OMP.LSWTSS.AssetReplacementModule",
+        "assemblyPath": "omp-lswtss-asset-replacement.dll"
+      }
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "c-func-hook1",
+      "minVersion": "0.1.0"
+    },
+    {
+      "id": "c-api1",
+      "minVersion": "0.1.0"
+    }
+  ]
+}

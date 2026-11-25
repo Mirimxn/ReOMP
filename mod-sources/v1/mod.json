@@ -1,6 +1,6 @@
 {
   "name": "V1",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "actions": [
     {
       "typeId": "register-shared-assembly-action",
@@ -49,6 +49,10 @@
     {
       "id": "c-api1",
       "minVersion": "0.1.0"
+    },
+    {
+      "id": "asset-replacement",
+      "minVersion": "1.0.0"
     }
   ],
   "description": "Registration and runtime APIs for resources, characters and vehicles."

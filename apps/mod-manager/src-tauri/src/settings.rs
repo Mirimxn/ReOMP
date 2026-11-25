@@ -34,6 +34,10 @@ pub struct ManagerState {
     /// Keyed by `pair_key`.
     #[serde(default, rename = "fileWinners")]
     pub winners: BTreeMap<String, String>,
+    /// Game path (upper case) -> the mod whose copy is used, chosen file by
+    /// file. Overrides `winners` for that path.
+    #[serde(default, rename = "fileChoices")]
+    pub file_choices: BTreeMap<String, String>,
 }
 
 /// Order-independent key for two mod IDs.

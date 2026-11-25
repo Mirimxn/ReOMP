@@ -25,7 +25,14 @@ public static partial class V1
 
             _customResourcesInfo.Add(customResourceInfo);
 
-            LinkCustomResource(customResourceInfo);
+            // asset-replacement routes the lookup to the file the Mod Manager placed at the
+            // game path; it no longer deletes and hard-links files at startup.
+            AssetReplacement.RegisterModFile(
+                modId,
+                modDirPath,
+                modRegisterCustomResourceActionPayload.Path,
+                modRegisterCustomResourceActionPayload.SrcPath
+            );
         }
     }
 }

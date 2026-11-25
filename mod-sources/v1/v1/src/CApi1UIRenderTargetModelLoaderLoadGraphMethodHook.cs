@@ -40,7 +40,7 @@ public static partial class V1
     static void UnlinkCustomResource(string path)
     {
         var canon = GetResourceCanonPath(path);
-        _diskResourcesInfo.RemoveAll(r => r.CanonPath == canon);
+        AssetReplacement.Unregister("v1", canon);
         try
         {
             var abs = Path.Combine(Environment.CurrentDirectory, path);

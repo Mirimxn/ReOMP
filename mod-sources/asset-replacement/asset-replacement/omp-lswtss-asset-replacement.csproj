@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <Reference Include="omp-lswtss-c-func-hook1">
+      <HintPath>..\..\..\dist\c-func-hook1\omp-lswtss-c-func-hook1.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="omp-lswtss-c-api1-core">
+      <HintPath>..\..\..\dist\c-api1\omp-lswtss-c-api1-core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="omp-lswtss-c-api1-main">
+      <HintPath>..\..\..\dist\c-api1\omp-lswtss-c-api1-main.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>8500</NoWarn>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+</Project>

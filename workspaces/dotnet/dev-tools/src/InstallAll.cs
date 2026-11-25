@@ -9,6 +9,7 @@ public static class InstallAll
         InstallCApi1.Execute(gameDirPath);
         InstallInputHook1.Execute(gameDirPath);
         InstallOverlay1.Execute(gameDirPath);
+        InstallAssetReplacement.Execute(gameDirPath);
         InstallV1.Execute(gameDirPath);
         InstallDebugTools.Execute(gameDirPath);
         InstallGalaxyUnleashed.Execute(gameDirPath);
