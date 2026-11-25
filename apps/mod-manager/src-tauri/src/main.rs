@@ -17,11 +17,19 @@ mod testutil;
 mod version;
 mod watch;
 
+use tauri::Manager;
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(commands::AppState::default())
         .manage(commands::AssetState::default())
+        .manage(commands::DroppedFiles::default())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                commands::remember_dropped(window.app_handle(), paths);
+            }
+        })
         .setup(|app| {
             commands::init(app.handle());
             Ok(())
@@ -50,6 +58,7 @@ fn main() {
             commands::assets_read,
             commands::package_bytes,
             commands::use_manager_copies,
+            commands::read_dropped,
             commands::clear_file_winner,
             commands::import_with_auto_version,
         ])

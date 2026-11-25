@@ -420,6 +420,11 @@ function DraftPanel({
   );
 }
 
+/// Sends a message to the character maker page, if the Characters tab shows it.
+function toCharacterMaker(message: object) {
+  document.querySelector<HTMLIFrameElement>("iframe.character-maker")?.contentWindow?.postMessage(message, "*");
+}
+
 /// The character maker (tools/minifig-viewer, built into public/character-maker.html).
 /// It reads the game through the same index as the Game files tab, so that is opened
 /// first, and its finished mods go through the normal import.
@@ -466,7 +471,7 @@ function Characters({ targets }: { targets: TargetView[] }) {
         <button disabled={opening} onClick={() => open(kind)}>
           {opening ? "Reading the game files…" : "Reload game files"}
         </button>
-        <span className="hint">To add your own textures or models, use the page's Load files… button. Dropping files onto it doesn't work here yet.</span>
+        <span className="hint">Drop textures or models onto the page. Dropped onto a part of the body, they go to that part.</span>
       </div>
       {error && <p className="problem">{error}</p>}
       {opened && <iframe key={opened} className="character-maker" src="character-maker.html" title="Character maker" />}
@@ -686,12 +691,30 @@ function App() {
     refresh();
     const subscriptions = [
       listen<null>("library-changed", refresh),
-      listen<unknown>("tauri://drag-enter", () => setDragging(true)),
-      listen<unknown>("tauri://drag-leave", () => setDragging(false)),
-      listen<{ paths: string[] }>("tauri://drag-drop", ({ paths }) => {
+      listen<unknown>("tauri://drag-enter", () => {
+        setDragging(true);
+        toCharacterMaker({ type: "reomp-drag", on: true });
+      }),
+      listen<unknown>("tauri://drag-leave", () => {
         setDragging(false);
-        // On the Characters tab a drop is meant for the character maker, not a mod import.
-        if (tabRef.current === "characters") return;
+        toCharacterMaker({ type: "reomp-drag", on: false });
+      }),
+      listen<{ paths: string[]; position: { x: number; y: number } }>("tauri://drag-drop", ({ paths, position }) => {
+        setDragging(false);
+        // On the Characters tab a drop is meant for the character maker, not a mod import:
+        // pass the files and where they landed (in the page's own coordinates).
+        if (tabRef.current === "characters") {
+          const frame = document.querySelector<HTMLIFrameElement>("iframe.character-maker");
+          const box = frame?.getBoundingClientRect();
+          const scale = window.devicePixelRatio || 1;
+          toCharacterMaker({
+            type: "reomp-drop",
+            paths,
+            x: position.x / scale - (box?.left ?? 0),
+            y: position.y / scale - (box?.top ?? 0),
+          });
+          return;
+        }
         runImport(() => invoke<Outcome>("import_zips", { paths }));
       }),
     ];

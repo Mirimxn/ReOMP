@@ -12,6 +12,7 @@ window.MM=(()=>{
   const failure=(o)=>new Error([o.title,...(o.details||[])].filter(Boolean).join(' '));
   return {
     async start(){
+      this.listen();
       // the folder controls are the browser's; the manager's game folder is used instead
       for(const id of ['gameConnect','gameReconnect','gameForget'])if($(id))$(id).hidden=true;
       const h1=document.querySelector('h1');if(h1)h1.textContent='Character maker';
@@ -44,11 +45,25 @@ window.MM=(()=>{
       finishScan();
     },
     async read(m){return new Uint8Array(await invoke('assets_read',{path:m.path,source:m.source}));},
+    // The Mod Manager's window receives dropped files; on this tab it passes them here with
+    // the cursor position, and the page reads the ones just dropped.
+    async dropped(msg){
+      $('drop').hidden=true;
+      say('Reading '+msg.paths.length+' dropped file'+(msg.paths.length>1?'s':'')+'…');
+      const files=[];
+      for(const path of msg.paths){const name=path.split(/[\\/]/).pop();
+        try{files.push(new File([await invoke('read_dropped',{path})],name));}
+        catch(e){say('Could not read '+name+': '+(e&&e.message||e),true);return;}}
+      await dropFiles(files,msg.x,msg.y);
+    },
     async save(filename,data){
       const o=await invoke('package_bytes',data,{headers:{'file-name':filename,'to-library':dest=='library'?'1':'0'}});
       if(!o.ok)throw failure(o);
       this.cancelled=dest=='file'&&!(o.details||[]).length;   // the save dialog was closed
     },
+    listen(){window.addEventListener('message',(e)=>{if(e.source!==window.parent||!e.data)return;
+      if(e.data.type=='reomp-drag')$('drop').hidden=!e.data.on;
+      if(e.data.type=='reomp-drop')this.dropped(e.data);});},
     done(mod){return dest=='library'?'Added '+mod+' to your mods':this.cancelled?'Not saved ('+mod+'.zip)':'Saved '+mod+'.zip';},
   };
 })();

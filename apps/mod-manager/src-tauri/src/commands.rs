@@ -952,6 +952,39 @@ pub async fn assets_read(app: AppHandle, path: String, source: u32) -> Result<ta
     .map_err(|e| e.to_string())?
 }
 
+/// Files the player dropped on the window this session. The character maker can
+/// read these, and only these, through `read_dropped`.
+#[derive(Default)]
+pub struct DroppedFiles(Mutex<std::collections::HashSet<PathBuf>>);
+
+pub fn remember_dropped(app: &AppHandle, paths: &[PathBuf]) {
+    let state = app.state::<DroppedFiles>();
+    let mut dropped = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    dropped.extend(paths.iter().cloned());
+}
+
+/// The bytes of a file the player dropped on the window.
+#[tauri::command]
+pub async fn read_dropped(app: AppHandle, path: String) -> Result<tauri::ipc::Response, String> {
+    let path = PathBuf::from(path);
+    let allowed = {
+        let state = app.state::<DroppedFiles>();
+        let dropped = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        dropped.contains(&path)
+    };
+    if !allowed {
+        return Err(format!("{} wasn't dropped on the Mod Manager", path.display()));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        if !path.is_file() {
+            return Err(format!("{} is a folder or no longer exists; drop files rather than folders", path.display()));
+        }
+        std::fs::read(&path).map(tauri::ipc::Response::new).map_err(|e| format!("Can't read {}: {e}", path.display()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// A file name for a mod ZIP made in the app: letters, digits, `-`, `_` and `.`,
 /// ending in `.zip`.
 fn package_file_name(name: &str) -> String {
