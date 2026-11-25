@@ -46,6 +46,10 @@ fn main() {
             commands::draft_build,
             commands::set_file_winner,
             commands::set_file_choices,
+            commands::assets_paths,
+            commands::assets_read,
+            commands::package_bytes,
+            commands::use_manager_copies,
             commands::clear_file_winner,
             commands::import_with_auto_version,
         ])

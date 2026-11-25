@@ -179,12 +179,14 @@ const slots={};for(const [id,label,color] of SLOT_INFO)slots[id]={id,label,surfa
 let bodyMeshes=[];const STD_BODY=bodyMeshes;
 // the character's left is +x in the game (LEFT_ARM_DX11 sits at x>0); the stored pieces were named by screen side
 const GAME_SIDE={arm_l:'arm_r',arm_r:'arm_l',leg_l:'leg_r',leg_r:'leg_l'};
-for(const p0 of BODY){const p={...p0,slot:GAME_SIDE[p0.slot]||p0.slot};const pos=new Float32Array(b64(p.pos)),uv0=new Float32Array(b64(p.uv0)),uv=new Float32Array(b64(p.uv)),idx=new Uint16Array(b64(p.idx));
-  if(p.slot!='hands'){bodyMeshes.push({g:geom(pos,uv0,uv,idx),slot:p.slot,follows:HIDDEN_SLOTS[p.slot]||null});continue;}
+// pieces: {slot, pos, uv0, uv, idx} typed arrays, from the built-in copy or from the game's super_minifig_dx11.ghg (minifigBody)
+function addStdBody(pieces){STD_BODY.length=0;for(const p0 of pieces){const p={...p0,slot:GAME_SIDE[p0.slot]||p0.slot};const {pos,uv0,uv,idx}=p;
+  if(p.slot!='hands'){STD_BODY.push({g:geom(pos,uv0,uv,idx),slot:p.slot,follows:HIDDEN_SLOTS[p.slot]||null});continue;}
   // the hands are one piece in the model: split it by side so each hand has its own material (materials 7 and 8)
   for(const [slot,left] of [['hand_l',true],['hand_r',false]]){const keep=[];
     for(let i=0;i<idx.length;i+=3){const cx=pos[idx[i]*3]+pos[idx[i+1]*3]+pos[idx[i+2]*3];if((cx>0)==left)keep.push(idx[i],idx[i+1],idx[i+2]);}
-    bodyMeshes.push({g:geom(pos,uv0,uv,new Uint16Array(keep)),slot,follows:null});}}
+    STD_BODY.push({g:geom(pos,uv0,uv,new Uint16Array(keep)),slot,follows:null});}}}
+if(typeof BODY!='undefined')addStdBody(BODY.map(p=>({slot:p.slot,pos:new Float32Array(b64(p.pos)),uv0:new Float32Array(b64(p.uv0)),uv:new Float32Array(b64(p.uv)),idx:new Uint16Array(b64(p.idx))})));
 // a character's own minifig-shaped body (customiser, small): each piece goes to the body slot it sits in, judged against its skeleton
 function customBody(model){const B={};for(const b of model.bones||[])B[b.name]=b.world;const y=(n,d)=>B[n]?B[n][13]:d;
   const neck=y('Neck',0.289),hips=y('Hips',0.113),lh=B.LeftHand,rh=B.RightHand;const out=[];
@@ -609,6 +611,9 @@ const b64u=(s)=>new Uint8Array(b64(s));
 function modOf(e){const m=e&&/^mods\/([^/]+)\/(.+)$/.exec(e.path);return m?{id:m[1],rel:m[2]}:null;}
 // the roster row to copy: a custom character (OMP_…) is not in the game's table when rows are copied, so use the game character its files sit with
 function templateOf(C){const r=C.roster?C.roster.name:C.baseName;if(!/^OMP_/i.test(r))return r;const dir=C.selfPath.split('/').slice(-2,-1)[0];return dir||r;}
+// inside the Mod Manager (MM, manager.js) packaged files go through asset-replacement; on its own the page writes v1's action
+const RES_ACTION=self.MM?'asset-replacement/register':'v1/register-custom-resource-action';
+const MOD_DEPS=()=>self.MM?[{id:'v1',minVersion:'0.2.0'},{id:'asset-replacement',minVersion:'1.0.0'}]:[{id:'v1'}];
 async function exportMod(){if(!CH)return;const C=CH.C;
   const name=$('expName').value.trim(),id=$('expId').value.trim().toUpperCase(),mod=$('expMod').value.trim(),desc=$('expDesc').value.trim();
   const mode=$('expMode').value,update=mode=='update',replace=mode=='replace'||update;
@@ -680,31 +685,31 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     if(sceneRel){const ss=modOf(CH.scene.src);out.push([ss?caseOf(ss.rel):sceneRel,files.find(f=>f[0]==sceneRel)[1]]);}
     const added=[];
     for(const [n,d] of files){if(n==prefabRel||n==sceneRel||n=='mod.json')continue;const k=known(n);out.push([k||n,d]);
-      if(!k&&resources.includes(n)){acts.push({typeId:'v1/register-custom-resource-action',payload:{path:n,srcPath:n}});added.push(n.split('/').pop());}}
+      if(!k&&resources.includes(n)){acts.push({typeId:RES_ACTION,payload:{path:n,srcPath:n}});added.push(n.split('/').pop());}}
     out.unshift(['mod.json',PF.enc(JSON.stringify(mj,null,2))]);
     await saveFile(src.id+'.zip',PF.zip(out.map(([n,d])=>[src.id+'/'+n,d])));
     say('Exported '+src.id+'.zip with '+(out.length-1)+' files for mods/'+src.id+(added.length?' and '+added.length+' new entries in its mod.json':'')+'. Unzip it into the mods folder over the old one (close the game first).');return;}
   if(replace){   // the game's own files at their own paths: the roster row and preview stay the base's
-    const manifest={name:name||C.baseName,description:desc||('Replaces '+C.baseName),dependencies:[{id:'v1'}],
-      actions:[{typeId:'v1/register-custom-resource-action',payload:{path:pre.selfPath,srcPath:prefabRel}},
-        ...(sceneRel?[{typeId:'v1/register-custom-resource-action',payload:{path:scenePath,srcPath:sceneRel}}]:[]),
-        ...resources.map(r=>({typeId:'v1/register-custom-resource-action',payload:{path:r,srcPath:r}}))]};
+    const manifest={name:name||C.baseName,version:'1.0.0',description:desc||('Replaces '+C.baseName),dependencies:MOD_DEPS(),
+      actions:[{typeId:RES_ACTION,payload:{path:pre.selfPath,srcPath:prefabRel}},
+        ...(sceneRel?[{typeId:RES_ACTION,payload:{path:scenePath,srcPath:sceneRel}}]:[]),
+        ...resources.map(r=>({typeId:RES_ACTION,payload:{path:r,srcPath:r}}))]};
     files.unshift(['mod.json',PF.enc(JSON.stringify(manifest,null,1))]);
     await saveFile(mod+'.zip',PF.zip(files.map(([n,d])=>[mod+'/'+n,d])));
-    say('Exported '+mod+'.zip: it replaces '+C.baseName+' in the game. Turn off other mods that change '+C.baseName+"'s files.");return;}
+    say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': it replaces '+C.baseName+' in the game. Turn off other mods that change '+C.baseName+"'s files.");return;}
   let icon=null;if(iconFile){const bmp=await createImageBitmap(iconFile);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
     const blob=await new Promise(r=>c.toBlob(r,'image/png'));files.push(['icon.png',new Uint8Array(await blob.arrayBuffer())]);icon='icon.png';}
   const payload={id,tableName:'Characters',templateMatch:templateOf(C),prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};
   if(icon)payload.icon=icon;
   if(sceneRel){payload.previewScene=sceneRel;const pb=$('expPreview').value.trim();if(pb)payload.previewBase=pb;}
   const fac=$('expFaction').value;if(fac!=='')payload.columnOverrides={CharacterClass:fac};
-  const manifest={name,description:desc||name,dependencies:[{id:'v1'}],
-    actions:[...resources.map(r=>({typeId:'v1/register-custom-resource-action',payload:{path:r,srcPath:r}})),{typeId:'v1/register-custom-vehicle-action',payload}]};
+  const manifest={name,version:'1.0.0',description:desc||name,dependencies:MOD_DEPS(),
+    actions:[...resources.map(r=>({typeId:RES_ACTION,payload:{path:r,srcPath:r}})),{typeId:'v1/register-custom-vehicle-action',payload}]};
   files.unshift(['mod.json',PF.enc(JSON.stringify(manifest,null,1))]);
   const zipped=PF.zip(files.map(([n,d])=>[mod+'/'+n,d]));
   const kept=parts.filter(p=>!p.entity).length;
   await saveFile(mod+'.zip',zipped);
-  say('Exported '+mod+'.zip: '+(files.length-1)+' files.'+(kept?' View-only parts were left out.':'')+
+  say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': '+(files.length-1)+' files.'+(kept?' View-only parts were left out.':'')+
     (alone.length?' No shader or texture-list file was found for '+alone.join(', ')+': drop them next to the model and export again, or the game will not show it.':''));}
   catch(e){say('Export failed: '+e.message,true);console.error(e);}
   finally{btnE.disabled=false;}}
@@ -714,6 +719,7 @@ const MODE_NOTE={replace:'The mod replaces the base character in the game: same 
 $('expMode').onchange=()=>{const m=$('expMode').value;$('expModeNote').hidden=m=='new';$('expModeNote').textContent=MODE_NOTE[m]||'';
   for(const i of ['expFaction','expId','expIconBtn','expPreview'])if($(i))$(i).disabled=m!='new';$('expName').disabled=m=='update';$('expMod').disabled=m=='update';};
 async function saveFile(filename,data){
+  if(self.MM)return MM.save(filename,data);
   const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
   if(dl){try{await dl.save({filename,data:new Blob([data])});return;}catch(e){if(e&&e.code=='declined')throw new Error('saving was cancelled');if(e&&e.code&&!['unavailable','not_granted','capability_disabled','capability_removed'].includes(e.code))throw new Error(e.message||e.code);}}
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type:'application/zip'}));a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}
@@ -733,7 +739,7 @@ function findGame(ref){ref=normPath(ref);const cands=[ref,ref.replace(/(\.[a-z_]
   for(const c of cands){const e=GAME.entries.get(c);if(e)return e;}
   for(const c of cands){const l=GAME.byName.get(c.split('/').pop());if(l&&l.length)return l[l.length-1];}
   return null;}
-async function readGame(e){if(e.dat)return DAT.read(e.dat.file,e.f);const f=e.handle?await e.handle.getFile():e.file;return new Uint8Array(await f.arrayBuffer());}
+async function readGame(e){if(e.mm)return MM.read(e.mm);if(e.dat)return DAT.read(e.dat.file,e.f);const f=e.handle?await e.handle.getFile():e.file;return new Uint8Array(await f.arrayBuffer());}
 async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();GAME.srcOf.set(name,e);return new File([await readGame(e)],name);}
 
 // remembered folder (only with the folder picker; the fallback file list cannot be kept)
@@ -768,14 +774,14 @@ $('dirInput').onchange=async(e)=>{const files=[...e.target.files];e.target.value
 $('gameConnect').onclick=connectGame;
 $('gameReconnect').onclick=async()=>{const h=GAME.saved;if(!h)return;try{if(await h.requestPermission({mode:'read'})=='granted')await scanHandle(h);}catch(e){say('Could not open '+h.name+' again: choose the folder.',true);connectGame();}};
 $('gameForget').onclick=async()=>{await kvDel('gameDir');GAME.saved=null;resetGame();renderGame();say('Game folder disconnected.');};
-(async()=>{const h=await kvGet('gameDir');if(!h||!h.queryPermission)return;GAME.saved=h;
+if(!self.MM)(async()=>{const h=await kvGet('gameDir');if(!h||!h.queryPermission)return;GAME.saved=h;
   try{if(await h.queryPermission({mode:'read'})=='granted'){await scanHandle(h);return;}}catch(e){}
   renderGame();})();
 
 // what the panel shows
 function renderGame(){const on=GAME.entries.size>0;$('gameOff').hidden=on;$('gameOn').hidden=!on;
   $('gameReconnect').hidden=on||!GAME.saved;if(GAME.saved)$('gameReconnect').textContent='Reopen '+GAME.saved.name;
-  if(on)$('gameInfo').textContent=GAME.name+' · '+GAME.dats.length+' archives · '+GAME.count.toLocaleString()+' files'+(GAME.loose?' ('+GAME.loose.toLocaleString()+' loose)':'')+(GAME.handle?'':'. This browser could not keep the folder, so choose it again next time.');
+  if(on)$('gameInfo').textContent=GAME.name+' · '+GAME.dats.length+' archives · '+GAME.count.toLocaleString()+' files'+(GAME.loose?' ('+GAME.loose.toLocaleString()+' loose)':'')+(GAME.handle||self.MM?'':'. This browser could not keep the folder, so choose it again next time.');
   searchGame();}
 let searchTimer=0;$('gameSearch').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchGame,120);};
 $('gameKind').onchange=searchGame;
@@ -835,5 +841,6 @@ function resetAll(){parts.length=0;target=null;expanded.clear();CH=null;bodyMesh
   renderCharacter();}
 $('clearAll').onclick=()=>{resetAll();setHead('normal');renderBodyRows();renderParts();say('Plain minifig. Load textures, parts or a character prefab.');loadStdMaps();};
 renderBodyRows();renderParts();requestAnimationFrame(frame);
-loadExample().catch(e=>say('The example could not load: '+e.message,true));
+if(self.MM)MM.start();
+else if(typeof SAMPLE_TEX!='undefined')loadExample().catch(e=>say('The example could not load: '+e.message,true));
 </script>

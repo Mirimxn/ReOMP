@@ -43,6 +43,8 @@ jobs:
 
       - name: Build the AppImage
         run: |
+          # The container only sees apps/mod-manager, so build the character maker page first.
+          node apps/mod-manager/scripts/build-character-maker.mjs
           docker build --platform linux/amd64 -f installers/linux/Dockerfile -t reomp-linux-builder apps/mod-manager
           id=$(docker create reomp-linux-builder)
           mkdir -p staging

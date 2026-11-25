@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "character-maker": "node scripts/build-character-maker.mjs",
+    "dev": "node scripts/build-character-maker.mjs && vite",
+    "build": "node scripts/build-character-maker.mjs && tsc --noEmit && vite build",
     "tauri": "tauri"
   },
   "dependencies": {

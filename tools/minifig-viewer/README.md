@@ -19,6 +19,7 @@ game textures (`.texture`, BC1/BC3/BC7 `.dds`, PNG) and models (`.gsc` rigid, `.
 - Export: textures are retargeted (`.texture`), wrapped (BC7 `.dds`) or encoded to BC7 mode 6 with mips (`tex_template.js` holds a game BC7 texture header); the ZIP holds one mod folder with `mod.json` (`v1/register-custom-resource-action` per file, then `v1/register-custom-vehicle-action` on the `Characters` table, `CharacterClass` override for the faction) and the preview scene when its `_cheapminifig.scene_baked` was loaded.
 - Checked by re-reading exports with the Python decoder: same object count and decode results as the base, root and `OLST` sizes consistent, records added.
 - `build.py` assembles `minifig-part-viewer.html`.
+- Inside the Mod Manager (Characters tab) the page is built by `apps/mod-manager/scripts/build-character-maker.mjs` with `manager.js` in place of `assets.js`: no built-in game files, the body comes from the game's `super_minifig_dx11.ghg` (`minifigBody`), game files come from the manager's index, and exports use `asset-replacement/register`, carry a version and go to the manager's import. `self.MM` tells the shared code which it is in.
 
 ## Game folder and archives
 

@@ -78,6 +78,37 @@ fn check_rel(rel: &str) -> Result<(), String> {
     if bad { Err(format!("\"{rel}\" isn't a safe relative path")) } else { Ok(()) }
 }
 
+/// Folder in the game where files the player edited are kept when they choose the
+/// Mod Manager's copies instead (hidden, so mods and the game never see it).
+pub const EDITED_DIR: &str = ".reomp-edited";
+
+/// Moves every file the manager installed that was changed since into
+/// `.reomp-edited/<time>/` (same relative path), so the next update can put the
+/// manager's copy back. Nothing is deleted. Returns the moved relative paths.
+pub fn set_aside_edited(receipt: &Receipt) -> Result<Vec<String>, String> {
+    let game = receipt.game_dir.as_path();
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or_default();
+    let keep = game.join(EDITED_DIR).join(stamp.to_string());
+    let mut moved = Vec::new();
+    for (rel, sha) in &receipt.files {
+        let path = rel_path(game, rel);
+        if !path.is_file() {
+            continue;
+        }
+        let actual = package::sha256_file(&path).map_err(|e| format!("Can't read {}: {e}", path.display()))?;
+        if actual == *sha {
+            continue;
+        }
+        let to = rel_path(&keep, rel);
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Can't create {}: {e}", parent.display()))?;
+        }
+        fs::rename(&path, &to).map_err(|e| format!("Can't move {} aside: {e}", path.display()))?;
+        moved.push(rel.clone());
+    }
+    Ok(moved)
+}
+
 fn rel_path(base: &Path, rel: &str) -> PathBuf {
     rel.split('/').fold(base.to_path_buf(), |path, segment| path.join(segment))
 }
@@ -1070,8 +1101,16 @@ mod tests {
         let dir = game(&f.root, "game");
         let receipt = run(&f, &[plan(&dir, Some((&f.payload, &[])), None)]).unwrap().remove(0);
         fs::write(dir.join("omp-lswtss-driver.dll"), b"edited").unwrap();
-        let error = run(&f, &[plan(&dir, None, receipt)]).unwrap_err();
+        let error = run(&f, &[plan(&dir, None, receipt.clone())]).unwrap_err();
         assert!(error.contains("changed outside"), "{error}");
         assert_eq!(fs::read(dir.join("omp-lswtss-driver.dll")).unwrap(), b"edited");
+
+        // Choosing the Mod Manager's copy keeps the edited file aside and lets the update run.
+        let receipt = receipt.unwrap();
+        assert_eq!(set_aside_edited(&receipt).unwrap(), vec!["omp-lswtss-driver.dll".to_string()]);
+        let kept: Vec<_> = fs::read_dir(dir.join(EDITED_DIR)).unwrap().flatten().collect();
+        assert_eq!(fs::read(kept[0].path().join("omp-lswtss-driver.dll")).unwrap(), b"edited");
+        run(&f, &[plan(&dir, Some((&f.payload, &[])), Some(receipt))]).unwrap();
+        assert_ne!(fs::read(dir.join("omp-lswtss-driver.dll")).unwrap(), b"edited");
     }
 }
