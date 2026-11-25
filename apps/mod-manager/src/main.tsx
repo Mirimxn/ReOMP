@@ -303,6 +303,15 @@ function DeployBanner({ status, onRetry }: { status: DeployStatus; onRetry: () =
             ))}
           </ul>
           <button onClick={onRetry}>Retry</button>
+          {status.details.some((d) => d.includes("changed outside the Mod Manager")) && (
+            <>
+              {" "}
+              <button onClick={() => invoke("use_manager_copies").then(onRetry)}>Use the Mod Manager's copy</button>
+              <p className="hint">
+                Your edited files are kept in the game folder under .reomp-edited, and the files from your mods are put back.
+              </p>
+            </>
+          )}
         </div>
       );
   }

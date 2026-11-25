@@ -747,6 +747,30 @@ pub async fn retry_deploy(app: AppHandle, state: State<'_, AppState>) -> Result<
     Ok(())
 }
 
+/// After an update stopped on files changed outside the Mod Manager: keeps those
+/// files in `.reomp-edited/` in the game folder and updates again with the
+/// manager's copies.
+#[tauri::command]
+pub async fn use_manager_copies(app: AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let mut moved = Vec::new();
+        {
+            let mut core = lock(&state);
+            for receipt in core.deploy.receipts.values() {
+                for rel in crate::deploy::set_aside_edited(receipt)? {
+                    moved.push(receipt.game_dir.join(crate::deploy::EDITED_DIR).join(rel).display().to_string());
+                }
+            }
+            core.deploy.request_retry();
+        }
+        notify(&app);
+        Ok(moved)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Packs an old mod from legacy-mods into the library.
 #[tauri::command]
 pub async fn add_legacy_mod(app: AppHandle, folder: String) -> Result<Outcome, String> {

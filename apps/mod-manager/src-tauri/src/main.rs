@@ -49,6 +49,7 @@ fn main() {
             commands::assets_paths,
             commands::assets_read,
             commands::package_bytes,
+            commands::use_manager_copies,
             commands::clear_file_winner,
             commands::import_with_auto_version,
         ])
