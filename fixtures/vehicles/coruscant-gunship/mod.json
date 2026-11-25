@@ -40,7 +40,7 @@
         "description": "LAAT/i gunship of the Coruscant Guard.",
         "unlocked": true,
         "icon": "icon.png",
-        "previewScene": "CHARS/VEHICLES/CORUSCANTGUNSHIP/PREVIEW/CORUSCANT_PREVIEW_FLAT.SCENE_BAKED",
+        "previewScene": "CHARS/VEHICLES/CORUSCANTGUNSHIP/CORUSCANT_PREVIEW_T2.SCENE_BAKED",
         "previewBase": "Micro_ARC_170"
       }
     }
