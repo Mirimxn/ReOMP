@@ -116,7 +116,7 @@ mod tests {
             ("CHARS/MINIFIG/T/T_ARM.TEXTURE".to_string(), b"arm".to_vec()),
             (
                 "mod.json".to_string(),
-                br#"{"name":"Trooper","version":"1.0.0","dependencies":[],"actions":[{"typeId":"asset-replacement/register","payload":{"path":"a","srcPath":"b"}}]}"#.to_vec(),
+                br#"{"name":"Trooper","version":"1.0.0","dependencies":[],"actions":[{"typeId":"asset-replacement/register","payload":{"path":"CHARS/MINIFIG/T/T_ARM.TEXTURE","srcPath":"CHARS/MINIFIG/T/T_ARM.TEXTURE"}}]}"#.to_vec(),
             ),
         ];
         let out = dir.join("trooper-1.0.1.zip");
