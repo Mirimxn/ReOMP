@@ -280,7 +280,9 @@ const handleAt=(d,p)=>d.slice(p,p+handleLen(d,p));
 function apply(d0,plan,ctx){
   const C=readCharacter(d0);const d=d0.slice();const v=dv(d);const edits=[];const log=[];
   const same=[];   // same-size writes
-  const putHandle=(p,path,id)=>edits.push([p,handleLen(d,p),path==null?EMPTY_HANDLE:handleBytes(path,id)]);
+  const swaps=[];   // [old path, old id, new path, new id] of each handle that now names another file
+  const noteSwap=(p,path,id)=>{if(path!=null&&id&&d0[p+4]){const L=dv(d0).getUint32(p+21,true);swaps.push([latin(d0,p+25,p+25+L-1),d0.slice(p+5,p+21),path,id]);}};
+  const putHandle=(p,path,id)=>{noteSwap(p,path,id);edits.push([p,handleLen(d,p),path==null?EMPTY_HANDLE:handleBytes(path,id)]);};
   const setTint=(ov,rgb)=>{if(ov.tintEn==null)return;d[ov.tintEn]=1;rgb.forEach((c,i)=>v.setFloat32(ov.tint+4*i,c,true));};
   // body
   if(C.body&&plan.body){for(const [slot,ch] of Object.entries(plan.body)){
@@ -301,7 +303,7 @@ function apply(d0,plan,ctx){
         if(inside&&(x.class=='apiEntity'||C.D.isComp(x.ci))&&(d[x.o+17]===0||d[x.o+17]===1))d[x.o+17]=0;}continue;}
     if(pc.model){const old=r.model.path;const rg=ent||r.obj;
       for(const p of findAll(d0,enc(old+'\0'),rg.o,rg.end)){const st=p-4-16-1-4;if(d0[st]==2&&d0[st+1]==0&&d0[st+4]==1&&v.getUint32(p-4,true)>=old.length+1)
-        edits.push([st,handleLen(d0,st),handleBytes(pc.model.path,pc.model.id||d0.slice(st+5,st+21))]);}
+        {const nid=pc.model.id||d0.slice(st+5,st+21);noteSwap(st,pc.model.path,nid);edits.push([st,handleLen(d0,st),handleBytes(pc.model.path,nid)]);}}
       modelSwaps.push([old,pc.model.path,pc.model.id]);}
     if(pc.special!=null&&r.special){const b=enc(pc.special+'\0');edits.push([r.special.pos,r.special.len,cat([u32le(b.length),b])]);}
     // material 0 is the model's unused default when the model has more: write the real materials
@@ -374,7 +376,19 @@ function apply(d0,plan,ctx){
       const m=cache.get(U);for(const q of [p.toLowerCase(),p.toLowerCase().replace(/_dx11\./,'_nxg.')]){if(known.has(q))continue;known.add(q);for(const r of m.get(q)||[])entries.push([q,r]);}}}
   if(entries.length)out=addDependencies(out,entries);
   if(dropOld.size)out=dropRecords(out,(p)=>!dropOld.has(p));
-  return {data:out,selfPath:C.newSelfPath,log};}
+  // population characters: the game finds their files by the resource ids of the base's load list, so a new file takes
+  // over the id of the one it replaces (that file's record goes); exported files carrying a new id get the old one (idMap)
+  const idMap={};
+  if(/^chars\/population\//i.test(C.selfPath||'')){const hx=(b)=>Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');
+    const byNew=new Map();for(const s of swaps){const k=hx(s[3]);if(!byNew.has(k))byNew.set(k,[]);byNew.get(k).push(s);}
+    const gone=new Set();
+    for(const [k,g] of byNew){const [op,oid,np,nid]=g[0];if(g.some(x=>x[0]!==op)||op.toLowerCase()===np.toLowerCase()||hx(oid)===k)continue;
+      const body=dv(out).getUint32(0,false)+4;if(find(out,enc(op+'\0'),body)>=0)continue;   // the old file is still used elsewhere
+      const N=Deps(out);let has=false;for(let i=0;i<N.nrec;i++)if(N.path(N.recNode(i)).toLowerCase()===op.toLowerCase()&&hx(N.recs[i].slice(28,44))===hx(oid))has=true;
+      if(!has||findAll(out,oid,body).length)continue;   // its id must be free in the body once its record goes
+      gone.add(op.toLowerCase());for(const o of findAll(out,nid))out.set(oid,o);idMap[k]=oid;log.push(np+' takes the id of '+op);}
+    if(gone.size)out=dropRecords(out,(p)=>!gone.has(p.toLowerCase()));}
+  return {data:out,selfPath:C.newSelfPath,log,idMap};}
 
 // ---------- grafting: copy a whole top-level attachment entity (with its components) from a donor into the base as a new slot
 // the block is copied byte for byte; only its class numbers (each file numbers its own classes), its GUIDs and the counts and sizes around it change
