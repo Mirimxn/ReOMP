@@ -767,7 +767,9 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   await saveFile(mod+'.zip',zipped);
   say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': '+(files.length-1)+' files.'+(kept?' View-only parts were left out.':'')+
     (alone.length?' No shader or texture-list file was found for '+alone.join(', ')+': drop them next to the model and export again, or the game will not show it.':''));}
-  catch(e){say('Export failed: '+e.message,true);console.error(e);}
+  catch(e){   // name the step that failed, so a report can say where
+    const at=((e&&e.stack)||'').split('\n').slice(1).map(l=>(/at (?:async )?(?:Object\.)?([\w.$]+) \(/.exec(l)||[])[1]).filter(Boolean).slice(0,3).join(' ← ');
+    say('Export failed: '+(e&&e.message||e)+(at?' [in '+at+']':''),true);console.error(e);}
   finally{btnE.disabled=false;}}
 $('exportBtn').onclick=exportMod;
 const MODE_NOTE={replace:'The mod replaces the base character in the game: same roster slot, name and preview. Faction, character ID, icon and preview base are not used.',
