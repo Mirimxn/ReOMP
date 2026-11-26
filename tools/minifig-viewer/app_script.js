@@ -748,6 +748,10 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   let sceneRel=null;
   let scenePath=null;
   if(CH.scene){const sc=PF.apply(CH.scene.bytes,plan,{textures:texList});sceneRel=dir+pname.toUpperCase()+'_CHEAPMINIFIG.SCENE_BAKED';scenePath=sc.selfPath;files.push([sceneRel,sc.data]);}
+  // a population character's new files take over the resource ids of the files they replace (PF.apply's idMap)
+  {const hx=(b)=>Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');const ids=Object.keys(pre.idMap||{});
+    if(ids.length)for(const f of files){if(f[1]===pre.data)continue;const n=(f[1][20]<<8)|f[1][21];const k=hx(f[1].slice(22+n,22+n+16));
+      if(pre.idMap[k]){f[1]=f[1].slice();f[1].set(pre.idMap[k],22+n);}}}
   if(update){   // the same files in the same mod: overwrite the prefab and preview, add new files to its mod.json
     let mj;
     if(self.MM){try{mj=JSON.parse(await MM.manifest(src.id));}catch(e){throw new Error('could not read the mod.json of '+src.id+': '+(e&&e.message||e));}}
