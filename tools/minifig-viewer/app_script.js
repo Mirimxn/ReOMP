@@ -347,10 +347,7 @@ function ownerOf(name){const n=name.toUpperCase().replace(/\.[A-Z]+$/,'');
   if(/HAT|HELMET/.test(n)){const h=parts.find(p=>/HAT|HELMET/i.test(p.name));if(h)return h;}
   for(const [id,,,re] of SLOT_INFO)if(re.test(n))return slots[id];
   return null;}
-// whether a dropped file is byte for byte the game file at a texture reference (only a .texture can be)
-async function sameAsGame(f,ref){if(!/\.texture$/i.test(f.name))return false;const e=findGame(ref.path);if(!e)return false;
-  try{const a=await readGame(e),b=new Uint8Array(await f.arrayBuffer());if(a.length!=b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!=b[i])return false;return true;}catch(err){return false;}}
-async function handleFiles(files,forced){let placed=0;const skipped=[];
+async function handleFiles(files,forced){let placed=0;const skipped=[];const before=CH&&CH.C;
   // a character first, then its preview scene, then everything else (so game files can match its references)
   const rank=(n)=>/\.prefab_baked$/i.test(n)?0:/\.scene_baked$/i.test(n)?1:/\.(pc_shaders|nxg_textures)$/i.test(n)?2:3;
   files=[...files].sort((a,b)=>rank(a.name)-rank(b.name));
@@ -368,10 +365,10 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
       const p=addPart(n,model);p.bytes=bytes;renderParts();select(p);placed++;continue;}
     if(!/\.(dds|texture|png|jpe?g|webp)$/i.test(n)){skipped.push(n+' (not a texture or model)');continue;}
     if(!forced&&WEATHER.test(n)){skipped.push(n+' (weather overlay: not shown here)');continue;}
-    // a texture the loaded character already uses: it goes wherever that texture is used. It is the game's own
-    // (shown, not exported) only when it is that very file; with the same name but other content it is yours
+    // a texture the loaded character already uses goes wherever that texture is used. Opened from the game file
+    // search it is the game's own (shown, not exported); dropped or loaded it is yours and replaces it
     const used=CH&&CH.refIndex.get(keyOf(n));
-    const game=used&&await sameAsGame(f,used)?used:null;
+    const game=f.game?(used||{path:f.game.path}):null;
     if(used&&!forced){const img=await loadImage(f);let hit=0;
       for(const o of allOwners())if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==used.path){setMap(o.surface,k,img,n,game?{game}:{src:f});hit++;}
       if(hit){placed++;continue;}}
@@ -381,7 +378,44 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
     setMap(owner.surface,kind,await loadImage(f),n,game?{game}:{src:f});placed++;
   }catch(err){skipped.push(n+' ('+err.message+')');}}
   renderBodyRows();renderParts();renderCharacter();
+  if(CH&&CH.C!==before&&!CH.C.isScene)historyReset();else historyCheck(0);
   if(skipped.length)say((placed?'Loaded '+placed+'. ':'')+'Skipped: '+skipped.join('; '),placed==0);else if(placed)say('Loaded '+placed+' file'+(placed>1?'s':'')+'.');}
+
+// ---------- undo / redo (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z): states of the parts, body textures, colours and head
+// recorded after each change; opening another character starts a new history
+const HISTORY_MAX=100;let undoStack=[],redoStack=[],histNow=null,histTimer=0;
+const histIds=new WeakMap();let histSeq=0;const histId=(o)=>{if(!o)return 0;if(!histIds.has(o))histIds.set(o,++histSeq);return histIds.get(o);};
+function surfSnap(sf){const maps={};for(const [k] of MAPS){const m=sf.maps[k];maps[k]={img:m.img,name:m.name,uv:m.uv,flip:m.flip,dx:m.dx,src:m.src,game:m.game,cleared:m.cleared};}return {color:sf.color,maps};}
+function surfRestore(sf,v){sf.color=v.color;for(const [k] of MAPS)Object.assign(sf.maps[k],v.maps[k],{dirty:true});sf.dirty=true;paintColor(sf);}
+const PART_FIELDS=['name','model','meshes','fit','visible','newModel','special','bytes','pieceMat'];
+function histSnap(){return {head:headMode,body:bodyMeshes,
+  slots:Object.values(slots).map(sl=>({sl,s:surfSnap(sl.surface)})),
+  parts:parts.map(p=>{const f={};for(const k of PART_FIELDS)f[k]=p[k];f.place={...p.place};f.mats=p.mats;
+    return {p,f,s:surfSnap(p.surface),m:p.mats?p.mats.map(m=>surfSnap(m.surface)):null};})};}
+function histSig(h){const mapSig=(v)=>[v.color,...Object.values(v.maps).map(m=>[histId(m.img),m.uv,m.flip,m.cleared].join(':'))].join('|');
+  return [h.head,histId(h.body),...h.slots.map(x=>mapSig(x.s)),
+    ...h.parts.map(x=>[histId(x.p),x.f.name,histId(x.f.model),x.f.visible,histId(x.f.newModel),x.f.special,x.f.place.x,x.f.place.y,x.f.place.z,mapSig(x.s),...(x.m||[]).map(mapSig)].join('/'))].join('#');}
+function histRestore(h){
+  parts.length=0;for(const x of h.parts){Object.assign(x.p,x.f,{place:{...x.f.place}});surfRestore(x.p.surface,x.s);
+    if(x.m&&x.p.mats)x.p.mats.forEach((m,i)=>x.m[i]&&surfRestore(m.surface,x.m[i]));parts.push(x.p);}
+  for(const x of h.slots)surfRestore(x.sl.surface,x.s);
+  bodyMeshes=h.body;setHead(h.head);
+  histNow={h,sig:histSig(h)};
+  if(target&&!parts.includes(target.ref)&&!Object.values(slots).includes(target.ref))setTarget(null);
+  renderBodyRows();renderParts();renderCharacter();}
+function historyReset(){clearTimeout(histTimer);undoStack=[];redoStack=[];const h=histSnap();histNow={h,sig:histSig(h)};}
+function historyCheck(delay=300){clearTimeout(histTimer);histTimer=setTimeout(()=>{if(!histNow)return historyReset();
+  const h=histSnap(),sig=histSig(h);if(sig==histNow.sig)return;
+  undoStack.push(histNow);if(undoStack.length>HISTORY_MAX)undoStack.shift();redoStack=[];histNow={h,sig};},delay);}
+function undo(){historyFlush();const prev=undoStack.pop();if(!prev)return say('Nothing to undo.');redoStack.push(histNow);histRestore(prev.h);say('Undone.');}
+function redo(){historyFlush();const next=redoStack.pop();if(!next)return say('Nothing to redo.');undoStack.push(histNow);histRestore(next.h);say('Redone.');}
+// a change still waiting for its debounce is recorded before undo/redo
+function historyFlush(){if(!histNow)return;clearTimeout(histTimer);const h=histSnap(),sig=histSig(h);if(sig!=histNow.sig){undoStack.push(histNow);redoStack=[];histNow={h,sig};}}
+for(const ev of ['change','input','click','pointerup'])document.addEventListener(ev,()=>historyCheck(),true);
+document.addEventListener('keydown',(e)=>{if(!(e.ctrlKey||e.metaKey)||e.altKey)return;const k=e.key.toLowerCase();
+  const t=e.target;const typing=t&&(t.isContentEditable||/^(TEXTAREA|SELECT)$/.test(t.tagName)||(t.tagName=='INPUT'&&/^(text|search|number|)$/i.test(t.type)));
+  if(typing)return;   // text boxes keep their own undo
+  if(k=='z'&&!e.shiftKey){e.preventDefault();undo();}else if(k=='y'||(k=='z'&&e.shiftKey)){e.preventDefault();redo();}});
 let dragDepth=0;
 window.addEventListener('dragenter',(e)=>{e.preventDefault();dragDepth++;$('drop').hidden=false;});
 window.addEventListener('dragleave',()=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)$('drop').hidden=true;});
@@ -761,7 +795,8 @@ function findGame(ref){ref=normPath(ref);const cands=[ref,ref.replace(/(\.[a-z_]
   for(const c of cands){const l=GAME.byName.get(c.split('/').pop());if(l&&l.length)return l[l.length-1];}
   return null;}
 async function readGame(e){if(e.mm)return MM.read(e.mm);if(e.dat)return DAT.read(e.dat.file,e.f);const f=e.handle?await e.handle.getFile():e.file;return new Uint8Array(await f.arrayBuffer());}
-async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();GAME.srcOf.set(name,e);return new File([await readGame(e)],name);}
+// a game file as a File, marked with its entry: textures opened this way are used from the game, not copied into mods
+async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();GAME.srcOf.set(name,e);const f=new File([await readGame(e)],name);f.game=e;return f;}
 
 // remembered folder (only with the folder picker; the fallback file list cannot be kept)
 const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('minifig-viewer',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});

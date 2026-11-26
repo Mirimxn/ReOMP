@@ -443,6 +443,21 @@ function Characters({ targets }: { targets: TargetView[] }) {
       .catch((e) => setError(String(e)))
       .finally(() => setOpening(false));
   };
+  // Ctrl+Z / Ctrl+Y while the keyboard is on the window around the page (e.g. after clicking the tab)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const k = e.key.toLowerCase();
+      const type = k === "z" && !e.shiftKey ? "reomp-undo" : k === "y" || (k === "z" && e.shiftKey) ? "reomp-redo" : null;
+      if (!type) return;
+      e.preventDefault();
+      toCharacterMaker({ type });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   useEffect(() => {
     if (available.length > 0) open(kind);
     // Open once when the tab is first shown; the button reopens.
