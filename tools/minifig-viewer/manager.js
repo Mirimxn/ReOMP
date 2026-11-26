@@ -64,6 +64,11 @@ window.MM=(()=>{
       if(e.data.type=='reomp-drop')this.dropped(e.data);
       if(e.data.type=='reomp-undo')undo();
       if(e.data.type=='reomp-redo')redo();});},
+    // BC7 with every mip level, compressed by the manager: {mips, data}
+    async encodeBC7(px,w,h){
+      const out=new Uint8Array(await invoke('encode_bc7',new Uint8Array(px.buffer,px.byteOffset,px.byteLength),{headers:{width:String(w),height:String(h)}}));
+      return {mips:new DataView(out.buffer).getUint32(0,true),data:out.subarray(4)};
+    },
     // the installed version's mod.json, and a new version of the mod made from it with the changed files
     async manifest(id){return invoke('mod_manifest',{id});},
     async update(id,zip){
