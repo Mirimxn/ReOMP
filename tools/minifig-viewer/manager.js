@@ -71,6 +71,8 @@ window.MM=(()=>{
     },
     // the installed version's mod.json, and a new version of the mod made from it with the changed files
     async manifest(id){return invoke('mod_manifest',{id});},
+    // the character names in the game's background-character palette (CHARACTERPALETTEDATA.PRJ)
+    async paletteCharacters(){return invoke('palette_characters');},
     async update(id,zip){
       const o=await invoke('package_update',zip,{headers:{'mod-id':id}});
       if(!o.ok)throw failure(o);

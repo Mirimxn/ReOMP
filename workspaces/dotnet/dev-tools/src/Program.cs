@@ -59,6 +59,15 @@ else if (commandName == "install-asset-replacement")
     string gameDirPath = args[1];
     InstallAssetReplacement.Execute(gameDirPath);
 }
+else if (commandName == "build-population-palette")
+{
+    BuildPopulationPalette.Execute();
+}
+else if (commandName == "install-population-palette")
+{
+    string gameDirPath = args[1];
+    InstallPopulationPalette.Execute(gameDirPath);
+}
 else if (commandName == "build-v1")
 {
     BuildV1.Execute();

@@ -43,6 +43,17 @@ Steps:
 2. Update a character the player made: "An update to its own mod" works for a character whose files an installed mod placed (`assets_paths` names the owner as `L:<mod>`). The page reads that version's mod.json (`mod_manifest`), maps each game path to its file in the mod, and sends the changed and new files (`package_update`); the manager writes the installed version's ZIP with them as the next free patch version (`update::write_next_version`) and imports it.
 3. Files dropped on the tab go to the maker instead of the mod import, to the part under the cursor. Done in 0.12.3.
 
+4. Background ("population") characters, such as the Coruscant clone troopers: new textures and models take over the resource IDs of the files they replace (the game finds a population character's files by those IDs), and the parts changed in the tab stop getting the game's palette paint (next section). Verify a re-exported Coruscant trooper in Coruscant.
+
+## Background-character colours
+
+The game paints background characters with colours from one shared file, `SYSTEMS/POPULATION/CHARACTERPALETTEDATA.PRJ`: per character name (`City_Clone_Couruscant`), one or more palettes with a colour and an on/off switch per part. The `population-palette` core mod owns the file (see its `mod.md`). Mods declare only their changes with `population-palette/set` actions; they never ship the file.
+
+- `package.rs` reads the actions into `Manifest::palette_edits`. `resolve.rs` blocks two selected mods setting the same part differently, and a mod that replaces the whole file through a resource action while any mod declares changes.
+- `deployer.rs` reads the game's own file from the archives (`palette::read_original`, cached by the archive fingerprint), writes every selected mod's changes into it (`palette::apply_edits`) and gives the result to `population-palette` as a generated file (`DeployMod::generated`, `merged/CHARACTERPALETTEDATA.PRJ`) placed at the game path like any resource. The receipt records its hash, so a change to any mod's colours reinstalls it. A change for a character or part the game doesn't have blocks the install. With no changes there is no file.
+- A `CHARACTERPALETTEDATA.PRJ` dropped on the window or picked with the file picker goes through the same import: its differences from the game's file (`palette::diff`) become a `palette-changes` mod, a new version each time.
+- The character maker, for a character under `chars/population/`, offers the palette entry it uses (guessed from the name, listed by `palette_characters`) and writes `apply: false` for each part changed in the tab.
+
 ## Selection and automatic deployment
 
 1. Resolve each enabled mod to its highest installed version by default. A per-mod override selects an exact installed version until cleared. Show the selected and deployed versions when they differ. A missing override is an error. If an archive used by the last successful deployment disappears externally, keep that deployment and show the missing package. The player can restore the ZIP or select another available version.

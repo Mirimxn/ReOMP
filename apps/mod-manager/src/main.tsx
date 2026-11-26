@@ -754,7 +754,11 @@ function App() {
           </button>
         </nav>
         {tab === "mods" ? (
-          <button disabled={busy || !library.libraryDir} onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}>
+          <button
+            disabled={busy || !library.libraryDir}
+            title="Mod ZIPs, or a CHARACTERPALETTEDATA.PRJ you edited: its colour changes become a mod of their own. You can also drop them on this window."
+            onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}
+          >
             {busy ? "Adding…" : "Add mod ZIPs…"}
           </button>
         ) : (

@@ -548,6 +548,10 @@ fn import_paths(app: &AppHandle, paths: Vec<PathBuf>) -> Outcome {
     };
     // Scan first so the batch is checked against what is on disk right now.
     core.rescan();
+    let paths = match palette_files_as_mods(&core, paths) {
+        Ok(paths) => paths,
+        Err(errors) => return Outcome::rejected("Nothing was imported:", errors),
+    };
     let outcome = match library::import(&dir, &core.library, &paths) {
         Ok(summary) => Outcome::ok(
             summary
@@ -583,6 +587,46 @@ pub async fn get_library(state: State<'_, AppState>) -> Result<LibraryView, Stri
 }
 
 /// Shared by drag-and-drop and the file picker.
+/// A dropped or picked CHARACTERPALETTEDATA.PRJ becomes a mod of its changes
+/// from the game's own file (a new version when that mod is already there).
+fn palette_files_as_mods(core: &Core, paths: Vec<PathBuf>) -> Result<Vec<PathBuf>, Vec<String>> {
+    if !paths.iter().any(|p| crate::palette::is_palette_file(p)) {
+        return Ok(paths);
+    }
+    let Some(temp_dir) = core.deploy.data_dir.as_ref().map(|d| d.join("tmp")) else {
+        return Err(vec!["The mod library isn't available.".into()]);
+    };
+    let Some(game_dir) = core.state.targets.values().filter_map(|t| t.path.clone()).find(|p| targets::validate_game_dir(p).is_ok()) else {
+        return Err(vec!["Choose the game folder first: the palette's changes are worked out from the game's own file.".into()]);
+    };
+    let original = crate::palette::read_original(&game_dir).map_err(|e| vec![format!("Couldn't read the game's palette: {e}")])?;
+    let mut next = core
+        .library
+        .packages
+        .get(crate::palette::CHANGES_ID)
+        .and_then(|v| v.keys().next_back().copied())
+        .map_or(Version(1, 0, 0), |v| Version(v.0, v.1, v.2 + 1));
+    let mut out = Vec::new();
+    for path in paths {
+        if !crate::palette::is_palette_file(&path) {
+            out.push(path);
+            continue;
+        }
+        let name = path.display();
+        let bytes = std::fs::read(&path).map_err(|e| vec![format!("Can't read {name}: {e}")])?;
+        let edits = crate::palette::diff(&original, &bytes).map_err(|e| vec![format!("{name}: {e}")])?;
+        if edits.is_empty() {
+            return Err(vec![format!("{name} has the same colours as the game's own palette, so there is nothing to add.")]);
+        }
+        std::fs::create_dir_all(&temp_dir).map_err(|e| vec![e.to_string()])?;
+        let zip = temp_dir.join(format!("{}-{next}.zip", crate::palette::CHANGES_ID));
+        crate::palette::write_changes_mod(&edits, &next.to_string(), &zip).map_err(|e| vec![e])?;
+        out.push(zip);
+        next = Version(next.0, next.1, next.2 + 1);
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn import_zips(app: AppHandle, paths: Vec<String>) -> Result<Outcome, String> {
     let paths = paths.into_iter().map(PathBuf::from).collect();
@@ -594,7 +638,7 @@ pub async fn import_zips(app: AppHandle, paths: Vec<String>) -> Result<Outcome, 
 #[tauri::command]
 pub async fn pick_and_import(app: AppHandle) -> Result<Outcome, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let picked = app.dialog().file().add_filter("Mod ZIP", &["zip"]).blocking_pick_files();
+        let picked = app.dialog().file().add_filter("Mod ZIP or palette file", &["zip", "prj"]).blocking_pick_files();
         let paths: Vec<PathBuf> = picked
             .unwrap_or_default()
             .into_iter()
@@ -952,6 +996,19 @@ pub async fn assets_read(app: AppHandle, path: String, source: u32) -> Result<ta
     .map_err(|e| e.to_string())?
 }
 
+/// The character names in the game's background-character palette, for the
+/// character maker's choice of which palette a background character uses.
+#[tauri::command]
+pub async fn palette_characters(app: AppHandle) -> Result<Vec<String>, String> {
+    let index = asset_index(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = crate::palette::read_original(&index.game_dir)?;
+        Ok(crate::palette::parse(&bytes)?.into_iter().map(|c| c.name).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Files the player dropped on the window this session. The character maker can
 /// read these, and only these, through `read_dropped`.
 #[derive(Default)]
@@ -1132,7 +1189,7 @@ pub async fn package_bytes(app: AppHandle, request: tauri::ipc::Request<'_>) -> 
                 .file()
                 .set_title("Save the mod ZIP")
                 .set_file_name(&file_name)
-                .add_filter("Mod ZIP", &["zip"])
+                .add_filter("Mod ZIP or palette file", &["zip", "prj"])
                 .blocking_save_file()
             else {
                 return Outcome::ok(Vec::new());
@@ -1259,7 +1316,7 @@ pub async fn draft_build(app: AppHandle, draft: crate::draft::Draft, to_library:
                 .file()
                 .set_title("Save the mod ZIP")
                 .set_file_name(&file_name)
-                .add_filter("Mod ZIP", &["zip"])
+                .add_filter("Mod ZIP or palette file", &["zip", "prj"])
                 .blocking_save_file()
             else {
                 return Outcome::ok(Vec::new());

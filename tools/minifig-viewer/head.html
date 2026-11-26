@@ -171,6 +171,8 @@ kbd{font-family:var(--mono);font-size:11px;background:var(--chip);border:1px sol
       <div class="form">
         <label for="expMode">Export as</label><select id="expMode"><option value="new">A new character</option><option value="replace">A replacement for the base</option><option value="update">An update to its own mod</option></select>
         <p class="hint full" id="expModeNote" hidden>The mod replaces the base character in the game: same roster slot, name and preview. Faction, character ID, icon and preview base are not used.</p>
+        <label for="expPalette" class="pal" hidden>Game colours</label><select id="expPalette" class="pal" hidden title="The game paints background characters with colours from its palette (CHARACTERPALETTEDATA.PRJ). Choose the palette entry this character uses: the parts you changed stop getting its paint, so they look as they do here."></select>
+        <p class="hint full pal" hidden>A background character: the game paints its parts from a palette entry. Parts you change here stop getting that paint. The entry was guessed from the name; choose another if it's wrong.</p>
         <label for="expName">Name</label><input type="text" id="expName" placeholder="Shown in the roster" autocomplete="off">
         <label for="expDesc">Description</label><input type="text" id="expDesc" placeholder="Optional" autocomplete="off">
         <label for="expFaction">Faction</label><select id="expFaction"></select>
