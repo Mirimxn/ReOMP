@@ -381,7 +381,13 @@ let dragDepth=0;
 window.addEventListener('dragenter',(e)=>{e.preventDefault();dragDepth++;$('drop').hidden=false;});
 window.addEventListener('dragleave',()=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)$('drop').hidden=true;});
 window.addEventListener('dragover',(e)=>e.preventDefault());
-window.addEventListener('drop',(e)=>{e.preventDefault();dragDepth=0;$('drop').hidden=true;handleFiles([...e.dataTransfer.files],null);});
+// files dropped onto a part or body piece go to it (their kind still comes from the name); a drop
+// elsewhere, or one that brings a character, is sorted by the file names
+function dropFiles(files,cx,cy){
+  const hasCharacter=files.some(f=>/\.(prefab|scene)_baked$/i.test(f.name));
+  const hit=hasCharacter?null:pickAt(cx,cy);if(hit)select(hit);
+  return handleFiles(files,hit?{ref:hit}:null);}
+window.addEventListener('drop',(e)=>{e.preventDefault();dragDepth=0;$('drop').hidden=true;dropFiles([...e.dataTransfer.files],e.clientX,e.clientY);});
 
 // ---------- character prefab: load a game character, dress it, export it as a mod
 // The prefab carries the character's abilities, voice and behaviour; its parts and materials are what can change.

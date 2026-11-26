@@ -41,7 +41,7 @@ Steps:
 
 1. Host the maker, read the game through the manager and add its mods to the library. Verify a new character and a replacement made in the tab, enabled, in game.
 2. Update a character the player made: rebuild it from the library copy and import it as the next version (replaces the standalone page's "update the mod in the game folder" mode, which is hidden in the tab).
-3. Files dropped on the tab go to the maker instead of the mod import.
+3. Files dropped on the tab go to the maker instead of the mod import, to the part under the cursor. Done in 0.12.3.
 
 ## Selection and automatic deployment
 
