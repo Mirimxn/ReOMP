@@ -614,7 +614,10 @@ async function buildTexture(m,gamePath,keepId){const f=m.src,n=f.name.toLowerCas
   return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath,keepId);}
 const b64u=(s)=>new Uint8Array(b64(s));
 // where a game-folder file came from: mods/<id>/<rel>, or null for the game's own archives
-function modOf(e){const m=e&&/^mods\/([^/]+)\/(.+)$/.exec(e.path);return m?{id:m[1],rel:m[2]}:null;}
+// the mod a loaded file came from: in the Mod Manager the mod that installed it (its path in the mod is
+// looked up in its mod.json), on its own a file under mods/<id>/ in the connected game folder
+function modOf(e){if(e&&e.mm)return e.mm.owner?{id:e.mm.owner,path:e.mm.path}:null;
+  const m=e&&/^mods\/([^/]+)\/(.+)$/.exec(e.path);return m?{id:m[1],rel:m[2]}:null;}
 // the roster row to copy: a custom character (OMP_…) is not in the game's table when rows are copied, so use the game character its files sit with
 function templateOf(C){const r=C.roster?C.roster.name:C.baseName;if(!/^OMP_/i.test(r))return r;const dir=C.selfPath.split('/').slice(-2,-1)[0];return dir||r;}
 // inside the Mod Manager (MM, manager.js) packaged files go through asset-replacement; on its own the page writes v1's action
@@ -624,7 +627,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   const name=$('expName').value.trim(),id=$('expId').value.trim().toUpperCase(),mod=$('expMod').value.trim(),desc=$('expDesc').value.trim();
   const mode=$('expMode').value,update=mode=='update',replace=mode=='replace'||update;
   const src=update?modOf(CH.src):null;
-  if(update&&!src)return say('Updating a mod works for a character loaded from a mod in the connected game folder (find it with the game file search). '+CH.C.baseName+' was not.',true);
+  if(update&&!src)return say(self.MM?'Updating works for a character from one of your installed mods (its files show as "mod …" in the game file search). '+CH.C.baseName+' is from the game.':'Updating a mod works for a character loaded from a mod in the connected game folder (find it with the game file search). '+CH.C.baseName+' was not.',true);
   if(!replace&&!name)return say('Give the character a name first.',true);
   if(!replace&&!/^[A-Z0-9_]{2,24}$/.test(id))return say('The character ID needs 2–24 letters, digits or _.',true);
   if(!update&&!/^[a-z0-9][a-z0-9_.-]{0,63}$/.test(mod))return say('The mod folder name may use lower-case letters, digits, - and _.',true);
@@ -682,17 +685,24 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   let scenePath=null;
   if(CH.scene){const sc=PF.apply(CH.scene.bytes,plan,{textures:texList});sceneRel=dir+pname.toUpperCase()+'_CHEAPMINIFIG.SCENE_BAKED';scenePath=sc.selfPath;files.push([sceneRel,sc.data]);}
   if(update){   // the same files in the same mod: overwrite the prefab and preview, add new files to its mod.json
-    const mjE=GAME.entries.get('mods/'+src.id+'/mod.json');let mj;
-    try{mj=JSON.parse(new TextDecoder().decode(await readGame(mjE)));}catch(e){throw new Error('could not read mods/'+src.id+'/mod.json'+(mjE?': '+e.message:''));}
+    let mj;
+    if(self.MM){try{mj=JSON.parse(await MM.manifest(src.id));}catch(e){throw new Error('could not read the mod.json of '+src.id+': '+(e&&e.message||e));}}
+    else{const mjE=GAME.entries.get('mods/'+src.id+'/mod.json');
+      try{mj=JSON.parse(new TextDecoder().decode(await readGame(mjE)));}catch(e){throw new Error('could not read mods/'+src.id+'/mod.json'+(mjE?': '+e.message:''));}}
     const acts=mj.actions||(mj.actions=[]);
+    // where a game path's file is inside the mod (Mod Manager: files are known by the game path they are installed at)
+    const relOf=(s)=>{if(s.rel)return s.rel;for(const a of acts){const p=a.payload||{};if(typeof p.path=='string'&&typeof p.srcPath=='string'&&p.path.toLowerCase()==s.path.toLowerCase())return p.srcPath;}
+      throw new Error(src.id+"'s mod.json doesn't declare "+s.path);};
     const known=(rel)=>{for(const a of acts){const p=a.payload||{};for(const k of ['srcPath','path','previewScene','icon'])if(typeof p[k]=='string'&&p[k].toLowerCase()==rel.toLowerCase())return p[k];}return null;};
     const caseOf=(rel)=>known(rel)||rel.toUpperCase();
-    const out=[[caseOf(src.rel),pre.data]];
-    if(sceneRel){const ss=modOf(CH.scene.src);out.push([ss?caseOf(ss.rel):sceneRel,files.find(f=>f[0]==sceneRel)[1]]);}
+    const out=[[caseOf(relOf(src)),pre.data]];
+    if(sceneRel){const ss=modOf(CH.scene.src);out.push([ss&&ss.id==src.id?caseOf(relOf(ss)):sceneRel,files.find(f=>f[0]==sceneRel)[1]]);}
     const added=[];
     for(const [n,d] of files){if(n==prefabRel||n==sceneRel||n=='mod.json')continue;const k=known(n);out.push([k||n,d]);
       if(!k&&resources.includes(n)){acts.push({typeId:RES_ACTION,payload:{path:n,srcPath:n}});added.push(n.split('/').pop());}}
     out.unshift(['mod.json',PF.enc(JSON.stringify(mj,null,2))]);
+    if(self.MM){const how=await MM.update(src.id,PF.zip(out));
+      say('Updated '+src.id+': '+(out.length-1)+' changed file'+(out.length>2?'s':'')+(added.length?', '+added.length+' new':'')+'. '+how);return;}
     await saveFile(src.id+'.zip',PF.zip(out.map(([n,d])=>[src.id+'/'+n,d])));
     say('Exported '+src.id+'.zip with '+(out.length-1)+' files for mods/'+src.id+(added.length?' and '+added.length+' new entries in its mod.json':'')+'. Unzip it into the mods folder over the old one (close the game first).');return;}
   if(replace){   // the game's own files at their own paths: the roster row and preview stay the base's
@@ -721,7 +731,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   finally{btnE.disabled=false;}}
 $('exportBtn').onclick=exportMod;
 const MODE_NOTE={replace:'The mod replaces the base character in the game: same roster slot, name and preview. Faction, character ID, icon and preview base are not used.',
-  update:'Saves the edits into the mod the character came from: the same prefab and preview files, their textures, and its mod.json with any new files added. Unzip it over that mod folder. Name, faction, ID, icon, preview base and mod folder are not used.'};
+  update:self.MM?'Saves your edits as the next version of the installed mod the character came from: its prefab, preview and textures are replaced, new files are added to its mod.json, and the Mod Manager installs the new version. Name, faction, ID, icon, preview base and mod folder are not used.':'Saves the edits into the mod the character came from: the same prefab and preview files, their textures, and its mod.json with any new files added. Unzip it over that mod folder. Name, faction, ID, icon, preview base and mod folder are not used.'};
 $('expMode').onchange=()=>{const m=$('expMode').value;$('expModeNote').hidden=m=='new';$('expModeNote').textContent=MODE_NOTE[m]||'';
   for(const i of ['expFaction','expId','expIconBtn','expPreview'])if($(i))$(i).disabled=m!='new';$('expName').disabled=m=='update';$('expMod').disabled=m=='update';};
 async function saveFile(filename,data){

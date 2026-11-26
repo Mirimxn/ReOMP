@@ -18,8 +18,6 @@ window.MM=(()=>{
       const h1=document.querySelector('h1');if(h1)h1.textContent='Character maker';
       const sub=document.querySelector('p.sub');
       if(sub)sub.textContent='Start from a game character: search for it below (for example clonetrooper) and open its .prefab_baked. Change its parts, colours and textures, then add it to your mods.';
-      // updating a mod in the game's mods folder is replaced by importing a new version (later)
-      const up=$('expMode')&&$('expMode').querySelector('option[value="update"]');if(up)up.remove();
       const btn=$('exportBtn');
       if(btn){const sel=document.createElement('select');sel.id='mmDest';
         sel.innerHTML='<option value="library">Add to my mods</option><option value="file">Save the ZIP…</option>';
@@ -35,8 +33,8 @@ window.MM=(()=>{
       resetGame();GAME.name='Game folder';GAME.dats=archives;
       for(let i=1;i<lines.length;i++){const line=lines[i];if(!line)continue;const tab=line.indexOf('\t');
         const path=line.slice(tab+1);if(!WANT.test(path))continue;
-        const src=line.slice(0,tab);const loose=src=='L';
-        addEntry(path,{mm:{path,source:loose?LOOSE:Number(src)},src:loose?'installed mod':archives[Number(src)]||'archive'});
+        const src=line.slice(0,tab);const loose=src.startsWith('L:');const owner=loose?src.slice(2):null;
+        addEntry(path,{mm:{path,source:loose?LOOSE:Number(src),owner},src:loose?'mod '+owner:archives[Number(src)]||'archive'});
         if(loose)GAME.loose++;}
       const body=findGame(BODY_PATH);
       if(!body)throw new Error(BODY_PATH+' is not in the game files');
@@ -64,6 +62,13 @@ window.MM=(()=>{
     listen(){window.addEventListener('message',(e)=>{if(e.source!==window.parent||!e.data)return;
       if(e.data.type=='reomp-drag')$('drop').hidden=!e.data.on;
       if(e.data.type=='reomp-drop')this.dropped(e.data);});},
+    // the installed version's mod.json, and a new version of the mod made from it with the changed files
+    async manifest(id){return invoke('mod_manifest',{id});},
+    async update(id,zip){
+      const o=await invoke('package_update',zip,{headers:{'mod-id':id}});
+      if(!o.ok)throw failure(o);
+      return (o.details||[]).join(' ');
+    },
     done(mod){return dest=='library'?'Added '+mod+' to your mods':this.cancelled?'Not saved ('+mod+'.zip)':'Saved '+mod+'.zip';},
   };
 })();
