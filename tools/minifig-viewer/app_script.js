@@ -347,6 +347,9 @@ function ownerOf(name){const n=name.toUpperCase().replace(/\.[A-Z]+$/,'');
   if(/HAT|HELMET/.test(n)){const h=parts.find(p=>/HAT|HELMET/i.test(p.name));if(h)return h;}
   for(const [id,,,re] of SLOT_INFO)if(re.test(n))return slots[id];
   return null;}
+// whether a dropped file is byte for byte the game file at a texture reference (only a .texture can be)
+async function sameAsGame(f,ref){if(!/\.texture$/i.test(f.name))return false;const e=findGame(ref.path);if(!e)return false;
+  try{const a=await readGame(e),b=new Uint8Array(await f.arrayBuffer());if(a.length!=b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!=b[i])return false;return true;}catch(err){return false;}}
 async function handleFiles(files,forced){let placed=0;const skipped=[];
   // a character first, then its preview scene, then everything else (so game files can match its references)
   const rank=(n)=>/\.prefab_baked$/i.test(n)?0:/\.scene_baked$/i.test(n)?1:/\.(pc_shaders|nxg_textures)$/i.test(n)?2:3;
@@ -365,10 +368,12 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
       const p=addPart(n,model);p.bytes=bytes;renderParts();select(p);placed++;continue;}
     if(!/\.(dds|texture|png|jpe?g|webp)$/i.test(n)){skipped.push(n+' (not a texture or model)');continue;}
     if(!forced&&WEATHER.test(n)){skipped.push(n+' (weather overlay: not shown here)');continue;}
-    // a texture the loaded character already uses: show it wherever it is used
-    const game=CH&&CH.refIndex.get(keyOf(n));
-    if(game&&!forced){const img=await loadImage(f);let hit=0;
-      for(const o of allOwners())if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==game.path){setMap(o.surface,k,img,n,{game});hit++;}
+    // a texture the loaded character already uses: it goes wherever that texture is used. It is the game's own
+    // (shown, not exported) only when it is that very file; with the same name but other content it is yours
+    const used=CH&&CH.refIndex.get(keyOf(n));
+    const game=used&&await sameAsGame(f,used)?used:null;
+    if(used&&!forced){const img=await loadImage(f);let hit=0;
+      for(const o of allOwners())if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==used.path){setMap(o.surface,k,img,n,game?{game}:{src:f});hit++;}
       if(hit){placed++;continue;}}
     const owner=forced?forced.ref:((target&&target.ref)||ownerOf(n));   // the part you selected wins over a guess from the name
     if(!owner){skipped.push(n+' (the name does not say which part it is for: click a part or body row name, then load it again)');continue;}
