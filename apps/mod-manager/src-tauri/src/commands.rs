@@ -893,22 +893,23 @@ pub async fn assets_search(app: AppHandle, query: String, folder: String) -> Res
 
 /// Every file the game loads, for the character maker, as text: the first line
 /// lists the archive names (tab-separated), then one `<source>\t<path>` line per
-/// file, where `<source>` is the archive's position or `L` for a loose file.
-/// Loose files are listed only when an installed mod declares them (the game
+/// file, where `<source>` is the archive's position or `L:<mod>` for a loose file
+/// from that installed mod. Loose files are listed only when an installed mod
+/// declares them (the game
 /// loads those through asset-replacement); other loose files in the game folder
 /// are leftovers the game never reads, so the archive copy is listed instead.
 #[tauri::command]
 pub async fn assets_paths(app: AppHandle) -> Result<tauri::ipc::Response, String> {
     let index = asset_index(&app)?;
     let canon = |p: &str| p.replace('\\', "/").trim_start_matches('/').to_ascii_lowercase();
-    let loaded: std::collections::HashSet<String> = {
+    let loaded: std::collections::HashMap<String, String> = {
         let state = app.state::<AppState>();
         let core = lock(&state);
         core.deploy
             .receipts
             .values()
             .filter(|r| r.game_dir == index.game_dir)
-            .flat_map(|r| r.resources.keys().map(|p| canon(p)))
+            .flat_map(|r| r.resources.iter().map(|(p, owner)| (canon(p), owner.clone())))
             .collect()
     };
     tauri::async_runtime::spawn_blocking(move || {
@@ -922,10 +923,9 @@ pub async fn assets_paths(app: AppHandle) -> Result<tauri::ipc::Response, String
         out.push('\n');
         for item in &index.items {
             if item.source == crate::assets::LOOSE {
-                if !loaded.contains(&canon(&item.path)) {
-                    continue;
-                }
-                out.push('L');
+                let Some(owner) = loaded.get(&canon(&item.path)) else { continue };
+                out.push_str("L:");
+                out.push_str(owner);
             } else {
                 out.push_str(&item.source.to_string());
             }
@@ -983,6 +983,77 @@ pub async fn read_dropped(app: AppHandle, path: String) -> Result<tauri::ipc::Re
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The library ZIP of the version of `id` installed in the game (or the newest),
+/// and that version.
+fn installed_zip(core: &Core, id: &str) -> Result<(PathBuf, Version), String> {
+    let versions = core.library.packages.get(id).ok_or_else(|| format!("{id} isn't in your mods"))?;
+    let installed = core.deploy.receipts.values().find_map(|r| r.mods.get(id).map(|m| m.version));
+    let version = installed.filter(|v| versions.contains_key(v)).or_else(|| versions.keys().next_back().copied());
+    let version = version.ok_or_else(|| format!("{id} has no version in your mods"))?;
+    let zip = versions[&version].files.keys().next().cloned().ok_or_else(|| format!("{id} {version} has no ZIP"))?;
+    Ok((zip, version))
+}
+
+/// The mod.json of the installed version of a mod, for the character maker's update.
+#[tauri::command]
+pub async fn mod_manifest(app: AppHandle, id: String) -> Result<String, String> {
+    let zip = {
+        let state = app.state::<AppState>();
+        let core = lock(&state);
+        installed_zip(&core, &id)?.0
+    };
+    tauri::async_runtime::spawn_blocking(move || crate::update::read_manifest(&zip).map(|(_, text)| text))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The character maker's "update its own mod": the request body is a ZIP of the
+/// changed and new files relative to the mod folder (with its mod.json), and the
+/// `mod-id` header names the mod. The installed version's ZIP with those files is
+/// imported as the next free patch version.
+#[tauri::command]
+pub async fn package_update(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<Outcome, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the changed files as the request body".into());
+    };
+    let bytes = bytes.clone();
+    let id = request.headers().get("mod-id").and_then(|v| v.to_str().ok()).unwrap_or_default().to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let found = {
+            let state = app.state::<AppState>();
+            let core = lock(&state);
+            installed_zip(&core, &id).map(|(zip, version)| {
+                let taken = &core.library.packages[&id];
+                let mut next = Version(version.0, version.1, version.2 + 1);
+                while taken.contains_key(&next) {
+                    next = Version(next.0, next.1, next.2 + 1);
+                }
+                (zip, next, core.deploy.data_dir.as_ref().map(|d| d.join("tmp")))
+            })
+        };
+        let (old, next, temp_dir) = match found {
+            Ok(found) => found,
+            Err(e) => return Outcome::rejected("Couldn't update the mod:", Some(e)),
+        };
+        let Some(temp_dir) = temp_dir else {
+            return Outcome::rejected("The mod library isn't available.", None::<String>);
+        };
+        let out = temp_dir.join(package_file_name(&format!("{id}-{next}")));
+        let made = crate::update::read_overrides(&bytes).and_then(|changes| {
+            std::fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+            crate::update::write_next_version(&old, &changes, next, &out)
+        });
+        if let Err(e) = made {
+            return Outcome::rejected("Couldn't update the mod:", Some(e));
+        }
+        let outcome = import_paths(&app, vec![out.clone()]);
+        let _ = std::fs::remove_file(&out);
+        outcome
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// A file name for a mod ZIP made in the app: letters, digits, `-`, `_` and `.`,

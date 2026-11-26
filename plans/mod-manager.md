@@ -40,7 +40,7 @@ The Characters tab hosts the character maker from `tools/minifig-viewer`, built 
 Steps:
 
 1. Host the maker, read the game through the manager and add its mods to the library. Verify a new character and a replacement made in the tab, enabled, in game.
-2. Update a character the player made: rebuild it from the library copy and import it as the next version (replaces the standalone page's "update the mod in the game folder" mode, which is hidden in the tab).
+2. Update a character the player made: "An update to its own mod" works for a character whose files an installed mod placed (`assets_paths` names the owner as `L:<mod>`). The page reads that version's mod.json (`mod_manifest`), maps each game path to its file in the mod, and sends the changed and new files (`package_update`); the manager writes the installed version's ZIP with them as the next free patch version (`update::write_next_version`) and imports it.
 3. Files dropped on the tab go to the maker instead of the mod import, to the part under the cursor. Done in 0.12.3.
 
 ## Selection and automatic deployment

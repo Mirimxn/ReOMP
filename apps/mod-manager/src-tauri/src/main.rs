@@ -14,6 +14,7 @@ mod settings;
 mod targets;
 #[cfg(test)]
 mod testutil;
+mod update;
 mod version;
 mod watch;
 
@@ -59,6 +60,8 @@ fn main() {
             commands::package_bytes,
             commands::use_manager_copies,
             commands::read_dropped,
+            commands::mod_manifest,
+            commands::package_update,
             commands::clear_file_winner,
             commands::import_with_auto_version,
         ])
