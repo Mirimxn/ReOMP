@@ -82,7 +82,8 @@ function drawMesh(g,mvp,model,eye,surf,flatColor){if(!g)return;
   else{gl.uniform1f(uni.flatc,1);gl.uniform4fv(uni.tint,flatColor);gl.uniform4fv(uni.use,[1,0,0,0]);}
   for(const [k,sz] of [['p',3],['n',3],['t0',2],['t1',2],['g0',4],['g1',4]]){if(loc[k]<0)continue;gl.bindBuffer(gl.ARRAY_BUFFER,g[k]);gl.enableVertexAttribArray(loc[k]);gl.vertexAttribPointer(loc[k],sz,gl.FLOAT,false,0,0);}
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);gl.drawElements(gl.TRIANGLES,g.count,gl.UNSIGNED_SHORT,0);}
-function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
+function frame(){requestAnimationFrame(frame);drawFrame();readPick();}
+function drawFrame(){if(!gl||!prog)return;
   const dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(1,Math.round(canvas.clientWidth*dpr)),h=Math.max(1,Math.round(canvas.clientHeight*dpr));
   if(canvas.width!=w||canvas.height!=h){canvas.width=w;canvas.height=h;}
   gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
@@ -104,6 +105,25 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
 function pieceShown(p,i){const pc=p.model&&p.model.pieces[i];if(!pc||!pc.variant)return true;const vs=p.model.variants;
   let want=(CH&&CH.droidTop)||'A';if(!vs.includes(want))want=vs[0];return pc.variant==want;}
 function partMatrix(p,dy){const m=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0)+liftAt(levelOfPart(p)),p.place.z);return p.fit?M.mul(m,p.fit.mat):m;}
+// ---------- pipette: pick a colour from the 3D view (the browser's own pipette in the colour box does not work
+// inside the Mod Manager's window). A pipette button sits next to each colour box; on its own the page also
+// offers the browser's screen pipette (EyeDropper) where it exists.
+let picking=null,pendingPick=null;
+function pipette(col){const b=document.createElement('button');b.className='icon pip';b.type='button';b.textContent='⊙';
+  b.title='Pick this colour from the 3D view: click here, then on the model';b.setAttribute('aria-label','Pick '+(col.getAttribute('aria-label')||'colour')+' from the view');
+  b.onclick=async()=>{if(!self.MM&&window.EyeDropper){try{const r=await new EyeDropper().open();return setPicked(col,r.sRGBHex);}catch(e){if(e&&e.name=='AbortError')return;}}
+    picking=col;canvas.style.cursor='crosshair';say('Click the model to take its colour (Esc cancels).');};
+  return b;}
+function setPicked(col,hex){col.value=hex;col.dispatchEvent(new Event('input',{bubbles:true}));col.dispatchEvent(new Event('change',{bubbles:true}));say('Colour '+hex+' picked.');}
+function endPick(){picking=null;canvas.style.cursor='';}
+canvas.addEventListener('pointerdown',(e)=>{if(!picking)return;e.stopImmediatePropagation();e.preventDefault();
+  const r=canvas.getBoundingClientRect();pendingPick={col:picking,x:Math.round((e.clientX-r.left)*canvas.width/r.width),y:Math.round((r.bottom-e.clientY)*canvas.height/r.height)};endPick();},true);
+window.addEventListener('keydown',(e)=>{if(picking&&e.key=='Escape'){endPick();say('Picking cancelled.');}});
+// read right after drawing, while the frame is still in the buffer
+function readPick(){if(!pendingPick||!gl)return;const {col,x,y}=pendingPick;pendingPick=null;const px=new Uint8Array(4);gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  if(px[3]<128)return say('That spot is empty: click on the model.',true);
+  // the canvas is drawn with premultiplied alpha
+  const c=[0,1,2].map(i=>Math.min(255,Math.round(px[i]*255/px[3])));setPicked(col,'#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''));}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
 const ptrs=new Map();let lastPinch=0,downAt=null;
 canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);downAt=ptrs.size==1&&e.button==0?[e.clientX,e.clientY]:null;});
@@ -237,7 +257,7 @@ function renderBodyRows(){const box=$('bodyRows');box.textContent='';
     const tex=document.createElement('span');tex.className='tex';const n=mapCount(s.surface);
     tex.textContent=s.surface.maps.color.name||(n?'':'no texture');if(n>(s.surface.maps.color.img?1:0))tex.textContent+=(tex.textContent?' +':'')+(n-(s.surface.maps.color.img?1:0))+' map'+(n-(s.surface.maps.color.img?1:0)>1?'s':'');
     tex.title=MAPS.map(([k,l])=>l+': '+(s.surface.maps[k].name||'none')).join('\n');
-    row.append(name,col,tex,btn('Colour…','icon',()=>chooseFor(s,'color'),'Load '+s.label+' colour texture'));wrap.append(row);
+    row.append(name,col,pipette(col),tex,btn('Colour…','icon',()=>chooseFor(s,'color'),'Load '+s.label+' colour texture'));wrap.append(row);
     if(expanded.has(id))wrap.append(mapEditor(s,id,renderBodyRows));
     name.onclick=()=>{if(expanded.has(id))expanded.delete(id);else expanded.add(id);setTarget({ref:s,el:row});renderBodyRows();};
     box.append(wrap);if(target&&target.ref===s){row.classList.add('target');target.el=row;}}}
@@ -314,10 +334,10 @@ function renderParts(){if(CH)CH.hidden=hiddenSlots();const box=$('partList');box
     nm.onclick=()=>{if(expanded.has(key))expanded.delete(key);else expanded.add(key);setTarget({ref:p,el});renderParts();};
     const col=document.createElement('input');col.type='color';col.value=p.surface.color;col.id='pcol_'+p.id;col.setAttribute('aria-label',p.name+' colour');
     col.oninput=()=>{p.surface.color=col.value;paintColor(p.surface);};
-    if(p.ownBody){vis.disabled=true;head.append(vis,nm,col);}
+    if(p.ownBody){vis.disabled=true;head.append(vis,nm,col,pipette(col));}
     else if(p.entity){vis.setAttribute('aria-label','Include '+p.entityName+' in the character');vis.title='Part of the character: untick to leave it out of the exported character';
-      head.append(vis,nm,col,btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entityName));}
-    else head.append(vis,nm,col,btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
+      head.append(vis,nm,col,pipette(col),btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entityName));}
+    else head.append(vis,nm,col,pipette(col),btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
     el.append(head);
     if(CH)el.append(partSlotLine(p));
     if(expanded.has(key)){if(p.entity&&p.newModel)el.append(specialEditor(p));
@@ -326,7 +346,7 @@ function renderParts(){if(CH)CH.hidden=hiddenSlots();const box=$('partList');box
           const c=document.createElement('input');c.type='color';c.value=m.surface.color;c.setAttribute('aria-label','Colour of '+m.label);c.oninput=()=>{m.surface.color=c.value;paintColor(m.surface);};
           const b=document.createElement('button');b.className='part-name';b.textContent=(m.id!=null?'Material '+m.id+' · ':'')+m.label;b.setAttribute('aria-expanded',expanded.has(mk));
           b.onclick=()=>{expanded.has(mk)?expanded.delete(mk):expanded.add(mk);setTarget({ref:m,el:null});renderParts();};
-          row.append(c,b);el.append(row);if(expanded.has(mk))el.append(mapEditor(m,mk,renderParts));}}
+          row.append(c,pipette(c),b);el.append(row);if(expanded.has(mk))el.append(mapEditor(m,mk,renderParts));}}
       else el.append(mapEditor(p,key,renderParts));
       const grid=document.createElement('div');grid.className='part-grid';
       for(const [ax,lab,min,max] of [['y','Height',-0.1,0.5],['x','Side',-0.2,0.2],['z','Depth',-0.2,0.2]]){
@@ -347,10 +367,10 @@ function ownerOf(name){const n=name.toUpperCase().replace(/\.[A-Z]+$/,'');
   if(/HAT|HELMET/.test(n)){const h=parts.find(p=>/HAT|HELMET/i.test(p.name));if(h)return h;}
   for(const [id,,,re] of SLOT_INFO)if(re.test(n))return slots[id];
   return null;}
-// whether a dropped file is byte for byte the game file at a texture reference (only a .texture can be)
-async function sameAsGame(f,ref){if(!/\.texture$/i.test(f.name))return false;const e=findGame(ref.path);if(!e)return false;
-  try{const a=await readGame(e),b=new Uint8Array(await f.arrayBuffer());if(a.length!=b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!=b[i])return false;return true;}catch(err){return false;}}
-async function handleFiles(files,forced){let placed=0;const skipped=[];
+// the 16-byte resource id stored in a game .texture's header (after the big-endian name length at 20 and the name)
+async function textureIdOf(f){const b=new Uint8Array(await f.arrayBuffer());const n=(b[20]<<8)|b[21];
+  if(!/\.texture$/i.test(f.name)||b.length<22+n+16)throw new Error(f.name+' is not a game .texture file');return b.slice(22+n,22+n+16);}
+async function handleFiles(files,forced){let placed=0;const skipped=[];const before=CH&&CH.C;
   // a character first, then its preview scene, then everything else (so game files can match its references)
   const rank=(n)=>/\.prefab_baked$/i.test(n)?0:/\.scene_baked$/i.test(n)?1:/\.(pc_shaders|nxg_textures)$/i.test(n)?2:3;
   files=[...files].sort((a,b)=>rank(a.name)-rank(b.name));
@@ -368,10 +388,11 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
       const p=addPart(n,model);p.bytes=bytes;renderParts();select(p);placed++;continue;}
     if(!/\.(dds|texture|png|jpe?g|webp)$/i.test(n)){skipped.push(n+' (not a texture or model)');continue;}
     if(!forced&&WEATHER.test(n)){skipped.push(n+' (weather overlay: not shown here)');continue;}
-    // a texture the loaded character already uses: it goes wherever that texture is used. It is the game's own
-    // (shown, not exported) only when it is that very file; with the same name but other content it is yours
+    // a texture the loaded character already uses goes wherever that texture is used. Opened from the game file
+    // search it is the game's own (shown, not exported); dropped or loaded it is yours and replaces it
     const used=CH&&CH.refIndex.get(keyOf(n));
-    const game=used&&await sameAsGame(f,used)?used:null;
+    // a game texture the character doesn't use yet: its path and resource id (in the .texture header) for the prefab
+    const game=f.game?(used||{path:f.game.path.toLowerCase(),id:await textureIdOf(f)}):null;
     if(used&&!forced){const img=await loadImage(f);let hit=0;
       for(const o of allOwners())if(o.surface.refs)for(const [k,r] of Object.entries(o.surface.refs))if(r.path==used.path){setMap(o.surface,k,img,n,game?{game}:{src:f});hit++;}
       if(hit){placed++;continue;}}
@@ -381,7 +402,44 @@ async function handleFiles(files,forced){let placed=0;const skipped=[];
     setMap(owner.surface,kind,await loadImage(f),n,game?{game}:{src:f});placed++;
   }catch(err){skipped.push(n+' ('+err.message+')');}}
   renderBodyRows();renderParts();renderCharacter();
+  if(CH&&CH.C!==before&&!CH.C.isScene)historyReset();else historyCheck(0);
   if(skipped.length)say((placed?'Loaded '+placed+'. ':'')+'Skipped: '+skipped.join('; '),placed==0);else if(placed)say('Loaded '+placed+' file'+(placed>1?'s':'')+'.');}
+
+// ---------- undo / redo (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z): states of the parts, body textures, colours and head
+// recorded after each change; opening another character starts a new history
+const HISTORY_MAX=100;let undoStack=[],redoStack=[],histNow=null,histTimer=0;
+const histIds=new WeakMap();let histSeq=0;const histId=(o)=>{if(!o)return 0;if(!histIds.has(o))histIds.set(o,++histSeq);return histIds.get(o);};
+function surfSnap(sf){const maps={};for(const [k] of MAPS){const m=sf.maps[k];maps[k]={img:m.img,name:m.name,uv:m.uv,flip:m.flip,dx:m.dx,src:m.src,game:m.game,cleared:m.cleared};}return {color:sf.color,maps};}
+function surfRestore(sf,v){sf.color=v.color;for(const [k] of MAPS)Object.assign(sf.maps[k],v.maps[k],{dirty:true});sf.dirty=true;paintColor(sf);}
+const PART_FIELDS=['name','model','meshes','fit','visible','newModel','special','bytes','pieceMat'];
+function histSnap(){return {head:headMode,body:bodyMeshes,
+  slots:Object.values(slots).map(sl=>({sl,s:surfSnap(sl.surface)})),
+  parts:parts.map(p=>{const f={};for(const k of PART_FIELDS)f[k]=p[k];f.place={...p.place};f.mats=p.mats;
+    return {p,f,s:surfSnap(p.surface),m:p.mats?p.mats.map(m=>surfSnap(m.surface)):null};})};}
+function histSig(h){const mapSig=(v)=>[v.color,...Object.values(v.maps).map(m=>[histId(m.img),m.uv,m.flip,m.cleared].join(':'))].join('|');
+  return [h.head,histId(h.body),...h.slots.map(x=>mapSig(x.s)),
+    ...h.parts.map(x=>[histId(x.p),x.f.name,histId(x.f.model),x.f.visible,histId(x.f.newModel),x.f.special,x.f.place.x,x.f.place.y,x.f.place.z,mapSig(x.s),...(x.m||[]).map(mapSig)].join('/'))].join('#');}
+function histRestore(h){
+  parts.length=0;for(const x of h.parts){Object.assign(x.p,x.f,{place:{...x.f.place}});surfRestore(x.p.surface,x.s);
+    if(x.m&&x.p.mats)x.p.mats.forEach((m,i)=>x.m[i]&&surfRestore(m.surface,x.m[i]));parts.push(x.p);}
+  for(const x of h.slots)surfRestore(x.sl.surface,x.s);
+  bodyMeshes=h.body;setHead(h.head);
+  histNow={h,sig:histSig(h)};
+  if(target&&!parts.includes(target.ref)&&!Object.values(slots).includes(target.ref))setTarget(null);
+  renderBodyRows();renderParts();renderCharacter();}
+function historyReset(){clearTimeout(histTimer);undoStack=[];redoStack=[];const h=histSnap();histNow={h,sig:histSig(h)};}
+function historyCheck(delay=300){clearTimeout(histTimer);histTimer=setTimeout(()=>{if(!histNow)return historyReset();
+  const h=histSnap(),sig=histSig(h);if(sig==histNow.sig)return;
+  undoStack.push(histNow);if(undoStack.length>HISTORY_MAX)undoStack.shift();redoStack=[];histNow={h,sig};},delay);}
+function undo(){historyFlush();const prev=undoStack.pop();if(!prev)return say('Nothing to undo.');redoStack.push(histNow);histRestore(prev.h);say('Undone.');}
+function redo(){historyFlush();const next=redoStack.pop();if(!next)return say('Nothing to redo.');undoStack.push(histNow);histRestore(next.h);say('Redone.');}
+// a change still waiting for its debounce is recorded before undo/redo
+function historyFlush(){if(!histNow)return;clearTimeout(histTimer);const h=histSnap(),sig=histSig(h);if(sig!=histNow.sig){undoStack.push(histNow);redoStack=[];histNow={h,sig};}}
+for(const ev of ['change','input','click','pointerup'])document.addEventListener(ev,()=>historyCheck(),true);
+document.addEventListener('keydown',(e)=>{if(!(e.ctrlKey||e.metaKey)||e.altKey)return;const k=e.key.toLowerCase();
+  const t=e.target;const typing=t&&(t.isContentEditable||/^(TEXTAREA|SELECT)$/.test(t.tagName)||(t.tagName=='INPUT'&&/^(text|search|number|)$/i.test(t.type)));
+  if(typing)return;   // text boxes keep their own undo
+  if(k=='z'&&!e.shiftKey){e.preventDefault();undo();}else if(k=='y'||(k=='z'&&e.shiftKey)){e.preventDefault();redo();}});
 let dragDepth=0;
 window.addEventListener('dragenter',(e)=>{e.preventDefault();dragDepth++;$('drop').hidden=false;});
 window.addEventListener('dragleave',()=>{dragDepth=Math.max(0,dragDepth-1);if(!dragDepth)$('drop').hidden=true;});
@@ -615,7 +673,8 @@ async function buildTexture(m,gamePath,keepId){const f=m.src,n=f.name.toLowerCas
     if(PF.bc7size(w,h,mips)==buf.length-148)return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),w,h,mips,buf.slice(148)),gamePath,keepId);}
   const img=m.img;const W=potX(img.width),H=potX(img.height);const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
   if(m.flip){g.translate(0,H);g.scale(1,-1);}g.drawImage(img,0,0,W,H);
-  const px=g.getImageData(0,0,W,H).data;const e=PF.encodeBC7(px,W,H);
+  // inside the Mod Manager, its BC7 encoder (Intel ISPC) compresses; on its own the page's simpler encoder does
+  const px=g.getImageData(0,0,W,H).data;const e=self.MM?await MM.encodeBC7(px,W,H):PF.encodeBC7(px,W,H);
   return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath,keepId);}
 const b64u=(s)=>new Uint8Array(b64(s));
 // where a game-folder file came from: mods/<id>/<rel>, or null for the game's own archives
@@ -732,7 +791,9 @@ async function exportMod(){if(!CH)return;const C=CH.C;
   await saveFile(mod+'.zip',zipped);
   say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': '+(files.length-1)+' files.'+(kept?' View-only parts were left out.':'')+
     (alone.length?' No shader or texture-list file was found for '+alone.join(', ')+': drop them next to the model and export again, or the game will not show it.':''));}
-  catch(e){say('Export failed: '+e.message,true);console.error(e);}
+  catch(e){   // name the step that failed, so a report can say where
+    const at=((e&&e.stack)||'').split('\n').slice(1).map(l=>(/at (?:async )?(?:Object\.)?([\w.$]+) \(/.exec(l)||[])[1]).filter(Boolean).slice(0,3).join(' ← ');
+    say('Export failed: '+(e&&e.message||e)+(at?' [in '+at+']':''),true);console.error(e);}
   finally{btnE.disabled=false;}}
 $('exportBtn').onclick=exportMod;
 const MODE_NOTE={replace:'The mod replaces the base character in the game: same roster slot, name and preview. Faction, character ID, icon and preview base are not used.',
@@ -761,7 +822,8 @@ function findGame(ref){ref=normPath(ref);const cands=[ref,ref.replace(/(\.[a-z_]
   for(const c of cands){const l=GAME.byName.get(c.split('/').pop());if(l&&l.length)return l[l.length-1];}
   return null;}
 async function readGame(e){if(e.mm)return MM.read(e.mm);if(e.dat)return DAT.read(e.dat.file,e.f);const f=e.handle?await e.handle.getFile():e.file;return new Uint8Array(await f.arrayBuffer());}
-async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();GAME.srcOf.set(name,e);return new File([await readGame(e)],name);}
+// a game file as a File, marked with its entry: textures opened this way are used from the game, not copied into mods
+async function gameFile(e){const name=e.path.split('/').pop().toUpperCase();GAME.srcOf.set(name,e);const f=new File([await readGame(e)],name);f.game=e;return f;}
 
 // remembered folder (only with the folder picker; the fallback file list cannot be kept)
 const idb=()=>new Promise((res,rej)=>{const r=indexedDB.open('minifig-viewer',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});

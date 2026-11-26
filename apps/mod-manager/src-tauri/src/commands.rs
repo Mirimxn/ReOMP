@@ -1056,6 +1056,35 @@ pub async fn package_update(app: AppHandle, request: tauri::ipc::Request<'_>) ->
     .map_err(|e| e.to_string())
 }
 
+/// BC7 compression for the character maker: the request body is RGBA pixels,
+/// `width` and `height` headers give the size. Returns the level count (u32,
+/// little-endian) followed by every level's blocks.
+#[tauri::command]
+pub async fn encode_bc7(request: tauri::ipc::Request<'_>) -> Result<tauri::ipc::Response, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the pixels as the request body".into());
+    };
+    let bytes = bytes.clone();
+    let size = |name: &str| -> Result<usize, String> {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse().ok())
+            .filter(|&v: &usize| v > 0 && v <= 8192)
+            .ok_or_else(|| format!("missing or bad {name} header"))
+    };
+    let (w, h) = (size("width")?, size("height")?);
+    tauri::async_runtime::spawn_blocking(move || {
+        let (levels, data) = crate::bc7::encode_mips(&bytes, w, h)?;
+        let mut out = levels.to_le_bytes().to_vec();
+        out.extend(data);
+        Ok(tauri::ipc::Response::new(out))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// A file name for a mod ZIP made in the app: letters, digits, `-`, `_` and `.`,
 /// ending in `.zip`.
 fn package_file_name(name: &str) -> String {

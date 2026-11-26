@@ -219,11 +219,20 @@ function encodeBC7Level(px,w,h){const bw=Math.max(1,Math.ceil(w/4)),bh=Math.max(
     const bits=[[1<<6,7]];for(let k=0;k<4;k++)bits.push([e0.v[k],7],[e1.v[k],7]);bits.push([e0.p,1],[e1.p,1],[idx[0],3]);for(let i=1;i<16;i++)bits.push([idx[i],4]);
     const o=(by*bw+bx)*16;let pos=0;for(const [val,n] of bits){for(let b=0;b<n;b++){if((val>>b)&1){const P=pos+b;out[o+(P>>3)]|=1<<(P&7);}}pos+=n;}}
   return out;}
+// colours behind full transparency are invisible but still steer block compression (they made the stray colours
+// along decal edges): give each fully transparent pixel the alpha-weighted mean colour of its 4x4 block (black if
+// the block has nothing visible). Returns a copy.
+function bleedHidden(px,w,h){const o=new Uint8ClampedArray(px);
+  for(let by=0;by<h;by+=4)for(let bx=0;bx<w;bx+=4){let r=0,g=0,b=0,n=0;
+    for(let y=by;y<Math.min(h,by+4);y++)for(let x=bx;x<Math.min(w,bx+4);x++){const i=(y*w+x)*4,a=px[i+3];r+=px[i]*a;g+=px[i+1]*a;b+=px[i+2]*a;n+=a;}
+    const c=n?[r/n,g/n,b/n]:[0,0,0];
+    for(let y=by;y<Math.min(h,by+4);y++)for(let x=bx;x<Math.min(w,bx+4);x++){const i=(y*w+x)*4;if(px[i+3]==0){o[i]=c[0];o[i+1]=c[1];o[i+2]=c[2];}}}
+  return o;}
 function halve(px,w,h){const W=Math.max(1,w>>1),H=Math.max(1,h>>1);const o=new Uint8ClampedArray(W*H*4);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++)for(let k=0;k<4;k++){let s=0,n=0;for(const [dx,dy] of [[0,0],[1,0],[0,1],[1,1]]){const X=Math.min(w-1,2*x+dx),Y=Math.min(h-1,2*y+dy);s+=px[(Y*w+X)*4+k];n++;}o[(y*W+x)*4+k]=Math.round(s/n);}
   return [o,W,H];}
 function encodeBC7(px,w,h){const levels=[];let cur=px,cw=w,ch=h,m=0;
-  while(true){levels.push(encodeBC7Level(cur,cw,ch));m++;if(cw==1&&ch==1)break;[cur,cw,ch]=halve(cur,cw,ch);}
+  while(true){levels.push(encodeBC7Level(bleedHidden(cur,cw,ch),cw,ch));m++;if(cw==1&&ch==1)break;[cur,cw,ch]=halve(cur,cw,ch);}
   return {mips:m,data:cat(levels)};}
 
 
@@ -425,6 +434,6 @@ function zip(files){const local=[],central=[];let off=0;
 function specialNames(m){const out=[];for(let i=0;i<m.length-2;i++){if(m[i]===36&&(i==0||m[i-1]===0)){let e=i+1;while(e<m.length&&e-i<64&&((m[e]>=48&&m[e]<=57)||(m[e]>=65&&m[e]<=90)||(m[e]>=97&&m[e]<=122)||m[e]===95))e++;
   if(m[e]===0&&e-i>3){const s=latin(m,i+1,e);if(!out.includes(s))out.push(s);}}}return out;}
 
-return {graft,graftable,Schema,objtable,Dec,Deps,readCharacter,apply,retargetHeader,headerId,modelStem,renameInHeader,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
+return {graft,graftable,Schema,objtable,Dec,Deps,readCharacter,apply,retargetHeader,headerId,modelStem,renameInHeader,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bleedHidden,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
 })();
 if(typeof module!='undefined')module.exports=PF;

@@ -17,7 +17,7 @@ window.MM=(()=>{
       for(const id of ['gameConnect','gameReconnect','gameForget'])if($(id))$(id).hidden=true;
       const h1=document.querySelector('h1');if(h1)h1.textContent='Character maker';
       const sub=document.querySelector('p.sub');
-      if(sub)sub.textContent='Start from a game character: search for it below (for example clonetrooper) and open its .prefab_baked. Change its parts, colours and textures, then add it to your mods.';
+      if(sub)sub.textContent='Start from a game character: search for it below (for example clonetrooper) and open its .prefab_baked. Change its parts, colours and textures (Ctrl+Z undoes, Ctrl+Y redoes), then add it to your mods. Textures you drop or load are yours and go into the mod; textures opened from the search are used from the game.';
       const btn=$('exportBtn');
       if(btn){const sel=document.createElement('select');sel.id='mmDest';
         sel.innerHTML='<option value="library">Add to my mods</option><option value="file">Save the ZIP…</option>';
@@ -61,7 +61,14 @@ window.MM=(()=>{
     },
     listen(){window.addEventListener('message',(e)=>{if(e.source!==window.parent||!e.data)return;
       if(e.data.type=='reomp-drag')$('drop').hidden=!e.data.on;
-      if(e.data.type=='reomp-drop')this.dropped(e.data);});},
+      if(e.data.type=='reomp-drop')this.dropped(e.data);
+      if(e.data.type=='reomp-undo')undo();
+      if(e.data.type=='reomp-redo')redo();});},
+    // BC7 with every mip level, compressed by the manager: {mips, data}
+    async encodeBC7(px,w,h){
+      const out=new Uint8Array(await invoke('encode_bc7',new Uint8Array(px.buffer,px.byteOffset,px.byteLength),{headers:{width:String(w),height:String(h)}}));
+      return {mips:new DataView(out.buffer).getUint32(0,true),data:out.subarray(4)};
+    },
     // the installed version's mod.json, and a new version of the mod made from it with the changed files
     async manifest(id){return invoke('mod_manifest',{id});},
     async update(id,zip){
