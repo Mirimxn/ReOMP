@@ -14,6 +14,7 @@ mod settings;
 mod targets;
 #[cfg(test)]
 mod testutil;
+mod bc7;
 mod update;
 mod version;
 mod watch;
@@ -62,6 +63,7 @@ fn main() {
             commands::read_dropped,
             commands::mod_manifest,
             commands::package_update,
+            commands::encode_bc7,
             commands::clear_file_winner,
             commands::import_with_auto_version,
         ])

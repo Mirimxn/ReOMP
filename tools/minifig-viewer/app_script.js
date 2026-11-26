@@ -615,7 +615,8 @@ async function buildTexture(m,gamePath,keepId){const f=m.src,n=f.name.toLowerCas
     if(PF.bc7size(w,h,mips)==buf.length-148)return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),w,h,mips,buf.slice(148)),gamePath,keepId);}
   const img=m.img;const W=potX(img.width),H=potX(img.height);const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
   if(m.flip){g.translate(0,H);g.scale(1,-1);}g.drawImage(img,0,0,W,H);
-  const px=g.getImageData(0,0,W,H).data;const e=PF.encodeBC7(px,W,H);
+  // inside the Mod Manager, its BC7 encoder (Intel ISPC) compresses; on its own the page's simpler encoder does
+  const px=g.getImageData(0,0,W,H).data;const e=self.MM?await MM.encodeBC7(px,W,H):PF.encodeBC7(px,W,H);
   return PF.retargetTexture(PF.wrapBC7(b64u(TEX_TEMPLATE),W,H,e.mips,e.data),gamePath,keepId);}
 const b64u=(s)=>new Uint8Array(b64(s));
 // where a game-folder file came from: mods/<id>/<rel>, or null for the game's own archives
