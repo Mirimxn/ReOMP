@@ -82,7 +82,8 @@ function drawMesh(g,mvp,model,eye,surf,flatColor){if(!g)return;
   else{gl.uniform1f(uni.flatc,1);gl.uniform4fv(uni.tint,flatColor);gl.uniform4fv(uni.use,[1,0,0,0]);}
   for(const [k,sz] of [['p',3],['n',3],['t0',2],['t1',2],['g0',4],['g1',4]]){if(loc[k]<0)continue;gl.bindBuffer(gl.ARRAY_BUFFER,g[k]);gl.enableVertexAttribArray(loc[k]);gl.vertexAttribPointer(loc[k],sz,gl.FLOAT,false,0,0);}
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,g.i);gl.drawElements(gl.TRIANGLES,g.count,gl.UNSIGNED_SHORT,0);}
-function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
+function frame(){requestAnimationFrame(frame);drawFrame();readPick();}
+function drawFrame(){if(!gl||!prog)return;
   const dpr=Math.min(2,window.devicePixelRatio||1),w=Math.max(1,Math.round(canvas.clientWidth*dpr)),h=Math.max(1,Math.round(canvas.clientHeight*dpr));
   if(canvas.width!=w||canvas.height!=h){canvas.width=w;canvas.height=h;}
   gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
@@ -104,6 +105,25 @@ function frame(){requestAnimationFrame(frame);if(!gl||!prog)return;
 function pieceShown(p,i){const pc=p.model&&p.model.pieces[i];if(!pc||!pc.variant)return true;const vs=p.model.variants;
   let want=(CH&&CH.droidTop)||'A';if(!vs.includes(want))want=vs[0];return pc.variant==want;}
 function partMatrix(p,dy){const m=M.model(figRot,p.place.x,p.place.y+(followsHead(p)?dy:0)+liftAt(levelOfPart(p)),p.place.z);return p.fit?M.mul(m,p.fit.mat):m;}
+// ---------- pipette: pick a colour from the 3D view (the browser's own pipette in the colour box does not work
+// inside the Mod Manager's window). A pipette button sits next to each colour box; on its own the page also
+// offers the browser's screen pipette (EyeDropper) where it exists.
+let picking=null,pendingPick=null;
+function pipette(col){const b=document.createElement('button');b.className='icon pip';b.type='button';b.textContent='⊙';
+  b.title='Pick this colour from the 3D view: click here, then on the model';b.setAttribute('aria-label','Pick '+(col.getAttribute('aria-label')||'colour')+' from the view');
+  b.onclick=async()=>{if(!self.MM&&window.EyeDropper){try{const r=await new EyeDropper().open();return setPicked(col,r.sRGBHex);}catch(e){if(e&&e.name=='AbortError')return;}}
+    picking=col;canvas.style.cursor='crosshair';say('Click the model to take its colour (Esc cancels).');};
+  return b;}
+function setPicked(col,hex){col.value=hex;col.dispatchEvent(new Event('input',{bubbles:true}));col.dispatchEvent(new Event('change',{bubbles:true}));say('Colour '+hex+' picked.');}
+function endPick(){picking=null;canvas.style.cursor='';}
+canvas.addEventListener('pointerdown',(e)=>{if(!picking)return;e.stopImmediatePropagation();e.preventDefault();
+  const r=canvas.getBoundingClientRect();pendingPick={col:picking,x:Math.round((e.clientX-r.left)*canvas.width/r.width),y:Math.round((r.bottom-e.clientY)*canvas.height/r.height)};endPick();},true);
+window.addEventListener('keydown',(e)=>{if(picking&&e.key=='Escape'){endPick();say('Picking cancelled.');}});
+// read right after drawing, while the frame is still in the buffer
+function readPick(){if(!pendingPick||!gl)return;const {col,x,y}=pendingPick;pendingPick=null;const px=new Uint8Array(4);gl.readPixels(x,y,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);
+  if(px[3]<128)return say('That spot is empty: click on the model.',true);
+  // the canvas is drawn with premultiplied alpha
+  const c=[0,1,2].map(i=>Math.min(255,Math.round(px[i]*255/px[3])));setPicked(col,'#'+c.map(v=>v.toString(16).padStart(2,'0')).join(''));}
 // orbit: drag to turn, wheel or pinch to zoom, shift-drag (or right-drag) to move up and down
 const ptrs=new Map();let lastPinch=0,downAt=null;
 canvas.addEventListener('pointerdown',(e)=>{canvas.setPointerCapture(e.pointerId);ptrs.set(e.pointerId,[e.clientX,e.clientY,e.shiftKey||e.button==2]);downAt=ptrs.size==1&&e.button==0?[e.clientX,e.clientY]:null;});
@@ -237,7 +257,7 @@ function renderBodyRows(){const box=$('bodyRows');box.textContent='';
     const tex=document.createElement('span');tex.className='tex';const n=mapCount(s.surface);
     tex.textContent=s.surface.maps.color.name||(n?'':'no texture');if(n>(s.surface.maps.color.img?1:0))tex.textContent+=(tex.textContent?' +':'')+(n-(s.surface.maps.color.img?1:0))+' map'+(n-(s.surface.maps.color.img?1:0)>1?'s':'');
     tex.title=MAPS.map(([k,l])=>l+': '+(s.surface.maps[k].name||'none')).join('\n');
-    row.append(name,col,tex,btn('Colour…','icon',()=>chooseFor(s,'color'),'Load '+s.label+' colour texture'));wrap.append(row);
+    row.append(name,col,pipette(col),tex,btn('Colour…','icon',()=>chooseFor(s,'color'),'Load '+s.label+' colour texture'));wrap.append(row);
     if(expanded.has(id))wrap.append(mapEditor(s,id,renderBodyRows));
     name.onclick=()=>{if(expanded.has(id))expanded.delete(id);else expanded.add(id);setTarget({ref:s,el:row});renderBodyRows();};
     box.append(wrap);if(target&&target.ref===s){row.classList.add('target');target.el=row;}}}
@@ -314,10 +334,10 @@ function renderParts(){if(CH)CH.hidden=hiddenSlots();const box=$('partList');box
     nm.onclick=()=>{if(expanded.has(key))expanded.delete(key);else expanded.add(key);setTarget({ref:p,el});renderParts();};
     const col=document.createElement('input');col.type='color';col.value=p.surface.color;col.id='pcol_'+p.id;col.setAttribute('aria-label',p.name+' colour');
     col.oninput=()=>{p.surface.color=col.value;paintColor(p.surface);};
-    if(p.ownBody){vis.disabled=true;head.append(vis,nm,col);}
+    if(p.ownBody){vis.disabled=true;head.append(vis,nm,col,pipette(col));}
     else if(p.entity){vis.setAttribute('aria-label','Include '+p.entityName+' in the character');vis.title='Part of the character: untick to leave it out of the exported character';
-      head.append(vis,nm,col,btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entityName));}
-    else head.append(vis,nm,col,btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
+      head.append(vis,nm,col,pipette(col),btn('Model…','icon',()=>{pending={replace:p};$('fileInput').click();},'Replace the model of '+p.entityName));}
+    else head.append(vis,nm,col,pipette(col),btn('Remove','icon',()=>{parts.splice(parts.indexOf(p),1);if(target&&target.ref===p)target=null;renderParts();}));
     el.append(head);
     if(CH)el.append(partSlotLine(p));
     if(expanded.has(key)){if(p.entity&&p.newModel)el.append(specialEditor(p));
@@ -326,7 +346,7 @@ function renderParts(){if(CH)CH.hidden=hiddenSlots();const box=$('partList');box
           const c=document.createElement('input');c.type='color';c.value=m.surface.color;c.setAttribute('aria-label','Colour of '+m.label);c.oninput=()=>{m.surface.color=c.value;paintColor(m.surface);};
           const b=document.createElement('button');b.className='part-name';b.textContent=(m.id!=null?'Material '+m.id+' · ':'')+m.label;b.setAttribute('aria-expanded',expanded.has(mk));
           b.onclick=()=>{expanded.has(mk)?expanded.delete(mk):expanded.add(mk);setTarget({ref:m,el:null});renderParts();};
-          row.append(c,b);el.append(row);if(expanded.has(mk))el.append(mapEditor(m,mk,renderParts));}}
+          row.append(c,pipette(c),b);el.append(row);if(expanded.has(mk))el.append(mapEditor(m,mk,renderParts));}}
       else el.append(mapEditor(p,key,renderParts));
       const grid=document.createElement('div');grid.className='part-grid';
       for(const [ax,lab,min,max] of [['y','Height',-0.1,0.5],['x','Side',-0.2,0.2],['z','Depth',-0.2,0.2]]){
