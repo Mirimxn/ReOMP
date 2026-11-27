@@ -753,6 +753,16 @@ function App() {
             Characters
           </button>
         </nav>
+        <button
+          className="start-game"
+          disabled={!library?.targets.some((t) => t.enabled) || library?.deploy.state === "working"}
+          title="Starts the game. The Mod Manager stays open."
+          onClick={() =>
+            invoke("launch_game").catch((e) => setOutcome({ ok: false, title: "The game didn't start", details: [String(e)] }))
+          }
+        >
+          Start the game
+        </button>
         {tab === "mods" ? (
           <button
             disabled={busy || !library.libraryDir}

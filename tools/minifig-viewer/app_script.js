@@ -707,13 +707,14 @@ async function updatePaletteChoice(){const show=!!self.MM&&isPopulation();for(co
 const PALETTE_PARTS={head:['Skin'],body_front:['Upper Body'],body_back:['Upper Body'],arm_l:['Arms'],arm_r:['Arms'],hand_l:['Hands'],hand_r:['Hands'],
   leg_l:['Lower Body','Legs'],leg_r:['Lower Body','Legs'],hips:['Lower Body','Hips']};
 const PALETTE_DEP={id:'population-palette',minVersion:'1.0.0'};
+// far away the game draws only the palette's colours, so each changed part's colour from the tab is written into it
 function paletteActions(plan){const who=self.MM&&isPopulation()?$('expPalette').value:'';if(!who)return [];
-  const els=new Set();
-  for(const sid of Object.keys(plan.body||{}))for(const e of PALETTE_PARTS[sid]||[])els.add(e);
+  const els=new Map();const put=(e,c)=>{if(!els.has(e))els.set(e,c.toLowerCase());};
+  for(const sid of Object.keys(plan.body||{}))for(const e of PALETTE_PARTS[sid]||[])put(e,slots[sid].surface.color);
   for(const pc of plan.parts||[]){if(!(pc.model||pc.tex||pc.mats||pc.tint))continue;
-    const p=parts.find(q=>q.entity==pc.entity);const where=p?[p.newModel?p.newModel.path:'',p.origModel||'',p.entityName||''].join(' '):'';
-    const k=/hat|helmet/i.test(where)?'Hat attachment':/hair/i.test(where)?'Hair attachment':/skirt/i.test(where)?'Skirt attachment':null;if(k)els.add(k);}
-  return [...els].map(element=>({typeId:'population-palette/set',payload:{character:who,element,apply:false}}));}
+    const p=parts.find(q=>q.entity==pc.entity);if(!p)continue;const where=[p.newModel?p.newModel.path:'',p.origModel||'',p.entityName||''].join(' ');
+    const k=/hat|helmet/i.test(where)?'Hat attachment':/hair/i.test(where)?'Hair attachment':/skirt/i.test(where)?'Skirt attachment':null;if(k)put(k,p.surface.color);}
+  return [...els].map(([element,colour])=>({typeId:'population-palette/set',payload:{character:who,element,apply:true,colour}}));}
 
 // inside the Mod Manager (MM, manager.js) packaged files go through asset-replacement; on its own the page writes v1's action
 const RES_ACTION=self.MM?'asset-replacement/register':'v1/register-custom-resource-action';
@@ -815,7 +816,7 @@ async function exportMod(){if(!CH)return;const C=CH.C;
         ...resources.map(r=>({typeId:RES_ACTION,payload:{path:r,srcPath:r}})),...pal]};
     files.unshift(['mod.json',PF.enc(JSON.stringify(manifest,null,1))]);
     await saveFile(mod+'.zip',PF.zip(files.map(([n,d])=>[mod+'/'+n,d])));
-    say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': it replaces '+C.baseName+' in the game.'+(pal.length?' The game no longer paints its '+pal.map(a=>a.payload.element.toLowerCase()).join(', ')+' (palette '+pal[0].payload.character+').':'')+' Turn off other mods that change '+C.baseName+"'s files.");return;}
+    say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': it replaces '+C.baseName+' in the game.'+(pal.length?' Its palette colours ('+pal[0].payload.character+') now match for '+pal.map(a=>a.payload.element.toLowerCase()).join(', ')+'.':'')+' Turn off other mods that change '+C.baseName+"'s files.");return;}
   let icon=null;if(iconFile){const bmp=await createImageBitmap(iconFile);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
     const blob=await new Promise(r=>c.toBlob(r,'image/png'));files.push(['icon.png',new Uint8Array(await blob.arrayBuffer())]);icon='icon.png';}
   const payload={id,tableName:'Characters',templateMatch:templateOf(C),prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};

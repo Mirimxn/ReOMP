@@ -60,6 +60,7 @@ fn main() {
             commands::assets_paths,
             commands::assets_read,
             commands::palette_characters,
+            commands::launch_game,
             commands::package_bytes,
             commands::use_manager_copies,
             commands::read_dropped,

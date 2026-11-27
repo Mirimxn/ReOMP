@@ -33,4 +33,4 @@ Each action needs `apply`, `colour` or both.
 - A change for a character or part the game's file doesn't have is a blocking error.
 - Without the Mod Manager there is no combined file. The changes are logged as not applied, and the game keeps its own palette.
 
-The Characters tab writes these actions for a background character: each part you change stops getting the game's paint for the palette entry you choose.
+The Characters tab writes these actions for a background character: for each part you change it writes that part's colour from the tab (with `apply: true`) into the palette entry you choose. Far away the game draws background characters with the palette's colours only, so switching a part off isn't enough there.

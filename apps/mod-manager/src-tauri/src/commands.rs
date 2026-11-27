@@ -996,6 +996,25 @@ pub async fn assets_read(app: AppHandle, path: String, source: u32) -> Result<ta
     .map_err(|e| e.to_string())?
 }
 
+/// Starts the game from the first set-up game folder. The manager's window
+/// stays open; while it is still installing mods the game isn't started.
+#[tauri::command]
+pub fn launch_game(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let core = lock(&state);
+    if matches!(core.deploy.status, crate::deployer::DeployStatus::Working) {
+        return Err("The Mod Manager is still installing mods. Start the game when it has finished.".into());
+    }
+    let Some(dir) = core.state.targets.values().filter(|t| t.enabled).filter_map(|t| t.path.clone()).find(|p| targets::validate_game_dir(p).is_ok()) else {
+        return Err("Choose the game folder first.".into());
+    };
+    std::process::Command::new(dir.join(targets::GAME_EXE))
+        .current_dir(&dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Couldn't start the game: {e}"))
+}
+
 /// The character names in the game's background-character palette, for the
 /// character maker's choice of which palette a background character uses.
 #[tauri::command]
