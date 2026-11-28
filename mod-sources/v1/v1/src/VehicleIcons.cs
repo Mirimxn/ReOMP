@@ -64,7 +64,10 @@ public static partial class V1
              requestedPath.Contains("chars/minifig", StringComparison.OrdinalIgnoreCase) ||
              requestedPath.Contains("chars/population", StringComparison.OrdinalIgnoreCase) ||
              requestedPath.Contains("chars/super_character", StringComparison.OrdinalIgnoreCase) ||
-             requestedPath.Contains("chars/vehicles", StringComparison.OrdinalIgnoreCase)))
+             requestedPath.Contains("chars/vehicles", StringComparison.OrdinalIgnoreCase) ||
+             requestedPath.Contains("systems/", StringComparison.OrdinalIgnoreCase) ||
+             requestedPath.Contains("_population.", StringComparison.OrdinalIgnoreCase) ||
+             requestedPath.Contains("quests/", StringComparison.OrdinalIgnoreCase)))
         {
             var served = FetchIsDiskResourceRegistered(GetResourceCanonPath(requestedPath));
             VehicleDebug($"file request: {requestedPath} -> {(served ? "mod file" : "game DAT")}");

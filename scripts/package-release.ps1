@@ -104,9 +104,9 @@ Write-Host "==> Building components..."
 # failed build may have wiped its own dist/ folder (which other components
 # reference), so on failure we restore it from the bundle. This avoids having
 # to hard-code which component needs which toolchain.
-# asset-replacement must build before v1, which references its assembly.
+# asset-replacement must build before v1 and population-palette, which reference its assembly.
 $components = @(
-    "overlay1", "input-hook1", "asset-replacement", "v1", "debug-tools", "test-cef-mod",
+    "overlay1", "input-hook1", "asset-replacement", "population-palette", "v1", "debug-tools", "test-cef-mod",
     "c-func-hook1", "galaxy-unleashed", "bundle"
 )
 # c-api1 needs both game versions to build (it launches each to scrape its API),
@@ -152,8 +152,14 @@ if (($built -contains "asset-replacement") -and -not ($built -contains "v1")) {
     Write-Warning "v1 didn't build; leaving out asset-replacement so upstream v1 keeps its own file hooks."
     $built = @($built | Where-Object { $_ -ne "asset-replacement" })
 }
-if ($built -contains "asset-replacement") {
-    New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir "mods/asset-replacement") | Out-Null
+if (($built -contains "population-palette") -and -not ($built -contains "asset-replacement")) {
+    Write-Warning "asset-replacement didn't ship; leaving out population-palette, which serves its file through it."
+    $built = @($built | Where-Object { $_ -ne "population-palette" })
+}
+foreach ($new in @("asset-replacement", "population-palette")) {
+    if ($built -contains $new) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $bundleDir "mods/$new") | Out-Null
+    }
 }
 
 # 4. Overlay the components that actually built onto the bundle, reusing the

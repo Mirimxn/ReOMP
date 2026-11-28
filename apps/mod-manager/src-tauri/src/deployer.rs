@@ -14,6 +14,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::commands::{lock, notify, AppState, Core};
 use crate::deploy::{self, DeployMod, Deployment, Payload, Receipt, Receipts, TargetPlan};
+use crate::palette;
 use crate::resolve;
 use crate::settings;
 use crate::targets::{self, TargetKind};
@@ -205,10 +206,13 @@ fn prepare(core: &mut Core) -> Prepared {
                         zip_sha256: sha.clone(),
                         resources: entry.info.manifest.resources.clone(),
                         skipped: selection.skipped.get(id).cloned().unwrap_or_default(),
+                        generated: Vec::new(),
+                        generated_sha: String::new(),
                     });
                 }
             }
         }
+        combine_palette(core, &specs, &mut mods, &mut reasons);
         match &deploy.payload {
             Some(Ok(p)) => payload = Some(p.clone()),
             Some(Err(e)) => reasons.push(format!(
@@ -234,7 +238,7 @@ fn prepare(core: &mut Core) -> Prepared {
     let fingerprint = serde_json::json!({
         "targets": specs.iter().map(|s| (s.kind.key(), s.game_dir.clone(), s.want)).collect::<Vec<_>>(),
         "payload": payload.as_ref().map(|p| p.version.clone()),
-        "mods": mods.iter().map(|m| (m.id.clone(), m.zip_sha256.clone())).collect::<Vec<_>>(),
+        "mods": mods.iter().map(|m| (m.id.clone(), m.zip_sha256.clone(), m.generated_sha.clone())).collect::<Vec<_>>(),
     })
     .to_string();
     let deploy = &mut core.deploy;
@@ -254,6 +258,35 @@ fn prepare(core: &mut Core) -> Prepared {
         return Prepared::Wait(DeployStatus::Waiting { games });
     }
     Prepared::Run(Job { specs, payload, mods, data_dir, fingerprint })
+}
+
+/// Writes every enabled mod's background-character colour changes into one copy
+/// of the game's palette, which the `population-palette` mod serves.
+fn combine_palette(core: &Core, specs: &[Spec], mods: &mut [DeployMod], reasons: &mut Vec<String>) {
+    let mut edits = Vec::new();
+    for m in mods.iter() {
+        if let Some(entry) = core.library.version(&m.id, m.version) {
+            edits.extend(entry.info.manifest.palette_edits.iter().map(|e| (m.id.clone(), e.clone())));
+        }
+    }
+    let Some(provider) = mods.iter_mut().find(|m| m.id == palette::PROVIDER) else { return };
+    if edits.is_empty() {
+        return;
+    }
+    let Some(spec) = specs.iter().find(|s| s.want) else { return };
+    let original = match palette::read_original(&spec.game_dir) {
+        Ok(bytes) => bytes,
+        Err(e) => return reasons.push(format!("Couldn't read the game's background-character colours: {e}")),
+    };
+    match palette::apply_edits(&original, &edits) {
+        Ok(bytes) => {
+            provider.generated = vec![(palette::MERGED_SRC.to_string(), bytes)];
+            provider.generated_sha = crate::deploy::generated_sha(&provider.generated);
+            provider.resources.retain(|r| r.path != palette::GAME_PATH);
+            provider.resources.push(crate::package::Resource { path: palette::GAME_PATH.into(), src: palette::MERGED_SRC.into() });
+        }
+        Err(errors) => reasons.extend(errors),
+    }
 }
 
 fn execute(job: &Job) -> Result<Receipts, (DeployStatus, bool)> {

@@ -9,6 +9,7 @@ mod deployer;
 mod legacy;
 mod library;
 mod package;
+mod palette;
 mod resolve;
 mod settings;
 mod targets;
@@ -58,6 +59,8 @@ fn main() {
             commands::set_file_choices,
             commands::assets_paths,
             commands::assets_read,
+            commands::palette_characters,
+            commands::launch_game,
             commands::package_bytes,
             commands::use_manager_copies,
             commands::read_dropped,

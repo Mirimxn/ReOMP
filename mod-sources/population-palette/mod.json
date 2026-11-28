@@ -1,0 +1,40 @@
+{
+  "name": "Background Character Colours",
+  "version": "1.0.0",
+  "description": "Owns the game's background-character colour palette and combines the colour changes of every enabled mod.",
+  "actions": [
+    {
+      "typeId": "register-shared-assembly-action",
+      "payload": {
+        "name": "omp-lswtss-population-palette",
+        "path": "omp-lswtss-population-palette.dll"
+      }
+    },
+    {
+      "typeId": "register-mod-action-type-action",
+      "payload": {
+        "id": "population-palette/set",
+        "executeModActionSharedAssemblyName": "omp-lswtss-population-palette",
+        "executeModActionStaticTypeName": "OMP.LSWTSS.PopulationPalette+SetAction"
+      }
+    },
+    {
+      "typeId": "register-mod-action-type-action",
+      "payload": {
+        "id": "population-palette/serve",
+        "executeModActionSharedAssemblyName": "omp-lswtss-population-palette",
+        "executeModActionStaticTypeName": "OMP.LSWTSS.PopulationPalette+ServeAction"
+      }
+    },
+    {
+      "typeId": "population-palette/serve",
+      "payload": {}
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "asset-replacement",
+      "minVersion": "1.0.1"
+    }
+  ]
+}

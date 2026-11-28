@@ -446,7 +446,15 @@ function zip(files){const local=[],central=[];let off=0;
 
 // part names a model offers ("$Name" entries), for the render object's Special Name
 function specialNames(m){const out=[];for(let i=0;i<m.length-2;i++){if(m[i]===36&&(i==0||m[i-1]===0)){let e=i+1;while(e<m.length&&e-i<64&&((m[e]>=48&&m[e]<=57)||(m[e]>=65&&m[e]<=90)||(m[e]>=97&&m[e]<=122)||m[e]===95))e++;
-  if(m[e]===0&&e-i>3){const s=latin(m,i+1,e);if(!out.includes(s))out.push(s);}}}return out;}
+  if(m[e]===0&&e-i>3){const s=latin(m,i+1,e);if(!out.includes(s))out.push(s);}}}
+  return out.length?out:objectNames(m);}
+// a .gsc without "$Name" entries names its objects as length-prefixed strings (Hat_CloneTrooperEpisodeIII); background
+// characters draw nothing for "[All Specials]", so the render object needs one of these. Most-used first, materials (_Mat) left out.
+function objectNames(m){const seen=new Map();const isId=(c)=>(c>=48&&c<=57)||(c>=65&&c<=90)||(c>=97&&c<=122)||c===95;
+  for(let i=1;i<m.length-4;i++){const c=m[i];if(!((c>=65&&c<=90)||(c>=97&&c<=122))||isId(m[i-1]))continue;let e=i;while(e<m.length&&e-i<64&&isId(m[e]))e++;
+    if(m[e]!==0||e-i<4)continue;const s=latin(m,i,e);if(/_mat$|shader|string|texture|shadow|impostor/i.test(s)||s===s.toLowerCase()){i=e;continue;}
+    const prefixed=m[i-1]===e-i+1;const k=seen.get(s)||{n:0,prefixed:false,at:i};k.n++;k.prefixed=k.prefixed||prefixed;seen.set(s,k);i=e;}
+  return [...seen].filter(([,k])=>k.prefixed).sort((a,b)=>b[1].n-a[1].n||a[1].at-b[1].at).map(([s])=>s);}
 
 return {graft,graftable,Schema,objtable,Dec,Deps,readCharacter,apply,retargetHeader,headerId,modelStem,renameInHeader,soundPairs,animSet,itemsOf,itemPairs,verify,retargetTexture,wrapBC7,encodeBC7,bleedHidden,bc7size,zip,crc32,selfPath,srgb,lin,BODY_IDS,BODY_TEX_IDS,specialNames,enc,find,cat,rand16};
 })();

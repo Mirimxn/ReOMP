@@ -29,6 +29,8 @@ pub struct Manifest {
     pub dependencies: Vec<Dependency>,
     /// Game files the mod replaces or adds, from its resource actions.
     pub resources: Vec<Resource>,
+    /// Background-character colour changes, from `population-palette/set` actions.
+    pub palette_edits: Vec<crate::palette::Edit>,
 }
 
 /// One declared game file: `path` in the game folder (upper case, `/`) and the
@@ -262,9 +264,14 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
         dependencies.push(Dependency { id, min_version });
     }
     let mut resources: Vec<Resource> = Vec::new();
+    let mut palette_edits = Vec::new();
     if let Some(Value::Array(actions)) = object.get("actions") {
         for action in actions {
             let type_id = action.get("typeId").and_then(Value::as_str).unwrap_or("");
+            if type_id == crate::palette::SET_ACTION {
+                palette_edits.push(crate::palette::parse_edit(action.get("payload"))?);
+                continue;
+            }
             if !RESOURCE_ACTIONS.contains(&type_id) {
                 continue;
             }
@@ -284,7 +291,7 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
             resources.push(Resource { path, src });
         }
     }
-    Ok(Manifest { name, description, version, dependencies, resources })
+    Ok(Manifest { name, description, version, dependencies, resources, palette_edits })
 }
 
 #[cfg(test)]

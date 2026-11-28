@@ -173,6 +173,37 @@ pub fn resolve_with(
         }
     }
 
+    // Background-character colours: each mod changes its own parts of the one
+    // palette file; two mods setting the same part differently can't both apply,
+    // and a mod shipping the whole file would undo everyone's changes.
+    let mut edits: BTreeMap<String, Vec<crate::palette::Edit>> = BTreeMap::new();
+    for (id, version) in &selection.selected {
+        let manifest = &library.packages[id][version].info.manifest;
+        if !manifest.palette_edits.is_empty() {
+            edits.insert(id.clone(), manifest.palette_edits.clone());
+        }
+    }
+    for (a, b, part) in crate::palette::clashes(&edits) {
+        let message = format!("{a} and {b} both change the background-character colour {part}. Disable one of them.");
+        problem(problems, &a, message.clone());
+        problem(problems, &b, message);
+    }
+    if !edits.is_empty() {
+        for (id, version) in &selection.selected {
+            if library.packages[id][version].info.manifest.resources.iter().any(|r| r.path == crate::palette::GAME_PATH) {
+                let others: Vec<&str> = edits.keys().map(String::as_str).collect();
+                problem(
+                    problems,
+                    id,
+                    format!(
+                        "{id} replaces the whole background-character palette, which would undo the colour changes of {}. Drop the palette file on the Mod Manager to turn it into a mod of its own changes, then disable {id}.",
+                        others.join(", ")
+                    ),
+                );
+            }
+        }
+    }
+
     for cycle in find_cycles(library, &selection.selected) {
         let path = cycle.iter().chain(cycle.first()).cloned().collect::<Vec<_>>().join(" → ");
         for id in &cycle {
@@ -312,6 +343,32 @@ mod tests {
         assert_eq!(s.skipped["blue"], BTreeSet::from(["CHARS/A.GHG".to_string()]));
         assert!(!s.skipped.contains_key("red"));
         assert_eq!(s.shared[&("blue".to_string(), "red".to_string())], BTreeSet::from(["CHARS/A.GHG".to_string()]));
+    }
+
+    #[test]
+    fn blocks_clashing_background_colours_and_whole_palettes() {
+        use crate::testutil::{write_zip, Entry};
+        let dir = temp_dir("resolve-palette");
+        let set_action = |apply: bool| {
+            format!(r#"{{"typeId":"population-palette/set","payload":{{"character":"City_Clone_Couruscant","element":"Arms","apply":{apply}}}}}"#)
+        };
+        let whole = r#"{"typeId":"asset-replacement/register","payload":{"path":"systems/population/characterpalettedata.prj","srcPath":"f"}}"#.to_string();
+        for (id, action) in [("off", set_action(false)), ("same", set_action(false)), ("on", set_action(true)), ("whole", whole)] {
+            let json = format!(r#"{{"name":"{id}","version":"1.0.0","dependencies":[],"actions":[{action}]}}"#);
+            let zip = dir.join(format!("{id}.zip"));
+            let (manifest, file) = (format!("{id}/mod.json"), format!("{id}/f"));
+            write_zip(&zip, &[Entry::File(&manifest, json.as_bytes()), Entry::File(&file, b"x")]);
+            crate::testutil::make_settled(&zip);
+        }
+        let library = scan(&dir).unwrap();
+        assert!(resolve(&library, &set(&["off", "same"]), &BTreeMap::new()).problems.is_empty());
+        let s = resolve(&library, &set(&["off", "on"]), &BTreeMap::new());
+        assert_eq!(s.problems.len(), 2, "{:?}", s.problems);
+        assert!(s.problems[0].message.contains("City_Clone_Couruscant Arms"));
+        assert!(resolve(&library, &set(&["whole"]), &BTreeMap::new()).problems.is_empty());
+        let s = resolve(&library, &set(&["off", "whole"]), &BTreeMap::new());
+        assert_eq!(s.problems.len(), 1, "{:?}", s.problems);
+        assert_eq!(s.problems[0].mod_id, "whole");
     }
 
     #[test]

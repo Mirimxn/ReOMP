@@ -502,7 +502,7 @@ function loadCharacter(name,bytes){
   $('bodySec').hidden=!C.body;$('ownBodyNote').hidden=!!C.body;
   // the game's own minifig maps are useful to see but are not what a mod changes
   renderBodyRows();renderParts();renderCharacter();
-  $('expName').value='';$('expId').value='';$('expMod').value='';$('expDesc').value='';
+  $('expName').value='';$('expId').value='';$('expMod').value='';$('expDesc').value='';updatePaletteChoice();
   if(GAME.entries.size)setTimeout(autoLoadCharacter,0);
   say('Loaded '+C.baseName+(GAME.entries.size?'.':'. Drop its game textures and models to see it (or connect the game folder), then change what you like and export.'));}
 
@@ -684,6 +684,38 @@ function modOf(e){if(e&&e.mm)return e.mm.owner?{id:e.mm.owner,path:e.mm.path}:nu
   const m=e&&/^mods\/([^/]+)\/(.+)$/.exec(e.path);return m?{id:m[1],rel:m[2]}:null;}
 // the roster row to copy: a custom character (OMP_…) is not in the game's table when rows are copied, so use the game character its files sit with
 function templateOf(C){const r=C.roster?C.roster.name:C.baseName;if(!/^OMP_/i.test(r))return r;const dir=C.selfPath.split('/').slice(-2,-1)[0];return dir||r;}
+// background ("population") characters: the game paints their parts with colours from CHARACTERPALETTEDATA.PRJ.
+// In the Mod Manager the export switches that paint off for the parts changed here (population-palette/set),
+// for the palette entry chosen in the export form (guessed from the character's name).
+const isPopulation=()=>!!(CH&&/^chars\/population\//i.test(CH.C.selfPath||''));
+let PALETTE_NAMES=null;
+// names in the palette are spelt loosely (City_Clone_Couruscant), so words match on their first letters or when nearly the same
+function lcs(a,b){let p=new Array(b.length+1).fill(0);for(const x of a){const q=[0];for(let j=0;j<b.length;j++)q.push(x==b[j]?p[j]+1:Math.max(p[j+1],q[j]));p=q;}return p[b.length];}
+const wordsLike=(t,u)=>t.slice(0,4)==u.slice(0,4)||lcs(t,u)>=0.75*Math.max(t.length,u.length);
+function guessPalette(base,names){const words=(x)=>x.replace(/([a-z])([A-Z])/g,'$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const toks=words(base).filter(t=>t.length>=4&&!['light','heavy','goon'].includes(t));
+  let best=null,score=0;
+  for(const n of names){const ws=n.toLowerCase().split(/[^a-z0-9]+/).filter(w=>w.length>=4);const s=toks.filter(t=>ws.some(w=>wordsLike(t,w))).length;
+    if(s>score||(s>0&&s==score&&n.length<best.length)){best=n;score=s;}}
+  return best;}
+async function updatePaletteChoice(){const show=!!self.MM&&isPopulation();for(const el of document.querySelectorAll('.pal'))el.hidden=!show;if(!show)return;
+  const sel=$('expPalette');
+  try{if(!PALETTE_NAMES)PALETTE_NAMES=await MM.paletteCharacters();}
+  catch(e){sel.innerHTML='<option value="">(the game palette could not be read)</option>';console.error(e);return;}
+  const g=guessPalette(CH.C.baseName,PALETTE_NAMES);const esc=(t)=>t.replace(/[&<>"]/g,(c)=>'&#'+c.charCodeAt(0)+';');
+  sel.innerHTML='<option value="">Keep the game\'s colours</option>'+PALETTE_NAMES.map(n=>'<option'+(n===g?' selected':'')+'>'+esc(n)+'</option>').join('');}
+const PALETTE_PARTS={head:['Skin'],body_front:['Upper Body'],body_back:['Upper Body'],arm_l:['Arms'],arm_r:['Arms'],hand_l:['Hands'],hand_r:['Hands'],
+  leg_l:['Lower Body','Legs'],leg_r:['Lower Body','Legs'],hips:['Lower Body','Hips']};
+const PALETTE_DEP={id:'population-palette',minVersion:'1.0.0'};
+// far away the game draws only the palette's colours, so each changed part's colour from the tab is written into it
+function paletteActions(plan){const who=self.MM&&isPopulation()?$('expPalette').value:'';if(!who)return [];
+  const els=new Map();const put=(e,c)=>{if(!els.has(e))els.set(e,c.toLowerCase());};
+  for(const sid of Object.keys(plan.body||{}))for(const e of PALETTE_PARTS[sid]||[])put(e,slots[sid].surface.color);
+  for(const pc of plan.parts||[]){if(!(pc.model||pc.tex||pc.mats||pc.tint))continue;
+    const p=parts.find(q=>q.entity==pc.entity);if(!p)continue;const where=[p.newModel?p.newModel.path:'',p.origModel||'',p.entityName||''].join(' ');
+    const k=/hat|helmet/i.test(where)?'Hat attachment':/hair/i.test(where)?'Hair attachment':/skirt/i.test(where)?'Skirt attachment':null;if(k)put(k,p.surface.color);}
+  return [...els].map(([element,colour])=>({typeId:'population-palette/set',payload:{character:who,element,apply:true,colour}}));}
+
 // inside the Mod Manager (MM, manager.js) packaged files go through asset-replacement; on its own the page writes v1's action
 const RES_ACTION=self.MM?'asset-replacement/register':'v1/register-custom-resource-action';
 const MOD_DEPS=()=>self.MM?[{id:'v1',minVersion:'0.2.0'},{id:'asset-replacement',minVersion:'1.0.0'}]:[{id:'v1'}];
@@ -768,19 +800,23 @@ async function exportMod(){if(!CH)return;const C=CH.C;
     const added=[];
     for(const [n,d] of files){if(n==prefabRel||n==sceneRel||n=='mod.json')continue;const k=known(n);out.push([k||n,d]);
       if(!k&&resources.includes(n)){acts.push({typeId:RES_ACTION,payload:{path:n,srcPath:n}});added.push(n.split('/').pop());}}
+    const pal=paletteActions(plan);const same=(x,y)=>x.toLowerCase()==y.toLowerCase();
+    for(const a of pal)if(!acts.some(b=>b.typeId==a.typeId&&b.payload&&same(b.payload.character||'',a.payload.character)&&same(b.payload.element||'',a.payload.element)&&b.payload.palette==null))acts.push(a);
+    if(pal.length){const deps=mj.dependencies||(mj.dependencies=[]);if(!deps.some(d=>d.id==PALETTE_DEP.id))deps.push(PALETTE_DEP);}
     out.unshift(['mod.json',PF.enc(JSON.stringify(mj,null,2))]);
     if(self.MM){const how=await MM.update(src.id,PF.zip(out));
       say('Updated '+src.id+': '+(out.length-1)+' changed file'+(out.length>2?'s':'')+(added.length?', '+added.length+' new':'')+'. '+how);return;}
     await saveFile(src.id+'.zip',PF.zip(out.map(([n,d])=>[src.id+'/'+n,d])));
     say('Exported '+src.id+'.zip with '+(out.length-1)+' files for mods/'+src.id+(added.length?' and '+added.length+' new entries in its mod.json':'')+'. Unzip it into the mods folder over the old one (close the game first).');return;}
   if(replace){   // the game's own files at their own paths: the roster row and preview stay the base's
-    const manifest={name:name||C.baseName,version:'1.0.0',description:desc||('Replaces '+C.baseName),dependencies:MOD_DEPS(),
+    const pal=paletteActions(plan);
+    const manifest={name:name||C.baseName,version:'1.0.0',description:desc||('Replaces '+C.baseName),dependencies:MOD_DEPS().concat(pal.length?[PALETTE_DEP]:[]),
       actions:[{typeId:RES_ACTION,payload:{path:pre.selfPath,srcPath:prefabRel}},
         ...(sceneRel?[{typeId:RES_ACTION,payload:{path:scenePath,srcPath:sceneRel}}]:[]),
-        ...resources.map(r=>({typeId:RES_ACTION,payload:{path:r,srcPath:r}}))]};
+        ...resources.map(r=>({typeId:RES_ACTION,payload:{path:r,srcPath:r}})),...pal]};
     files.unshift(['mod.json',PF.enc(JSON.stringify(manifest,null,1))]);
     await saveFile(mod+'.zip',PF.zip(files.map(([n,d])=>[mod+'/'+n,d])));
-    say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': it replaces '+C.baseName+' in the game. Turn off other mods that change '+C.baseName+"'s files.");return;}
+    say((self.MM?MM.done(mod):'Exported '+mod+'.zip')+': it replaces '+C.baseName+' in the game.'+(pal.length?' Its palette colours ('+pal[0].payload.character+') now match for '+pal.map(a=>a.payload.element.toLowerCase()).join(', ')+'.':'')+' Turn off other mods that change '+C.baseName+"'s files.");return;}
   let icon=null;if(iconFile){const bmp=await createImageBitmap(iconFile);const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
     const blob=await new Promise(r=>c.toBlob(r,'image/png'));files.push(['icon.png',new Uint8Array(await blob.arrayBuffer())]);icon='icon.png';}
   const payload={id,tableName:'Characters',templateMatch:templateOf(C),prefabResourcePath:pre.selfPath.toLowerCase(),name,description:desc||name};

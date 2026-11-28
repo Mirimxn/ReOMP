@@ -43,7 +43,7 @@ fn is_archive(path: &Path) -> bool {
     path.is_file() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("dat"))
 }
 
-fn archive_files(game_dir: &Path) -> Vec<PathBuf> {
+pub fn archive_files(game_dir: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = fs::read_dir(game_dir)
         .map(|it| it.flatten().map(|e| e.path()).filter(|p| is_archive(p)).collect())
         .unwrap_or_default();

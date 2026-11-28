@@ -123,6 +123,9 @@ pub struct ReceiptMod {
     /// Game paths this mod gave up to another mod.
     #[serde(default)]
     pub skipped: BTreeSet<String>,
+    /// SHA-256 of the files the manager wrote into this mod's folder (see `DeployMod::generated`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub generated: String,
 }
 
 /// What the manager installed into one game folder.
@@ -156,6 +159,11 @@ pub struct DeployMod {
     /// Declared game paths it gives up to a mod chosen over it. They aren't
     /// placed, and their actions are removed from its installed mod.json.
     pub skipped: BTreeSet<String>,
+    /// Files the manager writes into the mod's folder after unpacking it, by
+    /// path inside the folder (the combined background-character palette).
+    pub generated: Vec<(String, Vec<u8>)>,
+    /// SHA-256 over `generated`, empty when there is none.
+    pub generated_sha: String,
 }
 
 /// One target's requested end state. `want: None` removes the manager's files.
@@ -176,7 +184,10 @@ impl TargetPlan<'_> {
                     && receipt.mods.len() == mods.len()
                     && mods.iter().all(|m| {
                         receipt.mods.get(&m.id).is_some_and(|r| {
-                            r.zip_sha256 == m.zip_sha256 && r.version == m.version && r.skipped == m.skipped
+                            r.zip_sha256 == m.zip_sha256
+                                && r.version == m.version
+                                && r.skipped == m.skipped
+                                && r.generated == m.generated_sha
                         })
                     })
             }
@@ -365,7 +376,12 @@ impl Deployment {
             for m in mods {
                 receipt_mods.insert(
                     m.id.clone(),
-                    ReceiptMod { version: m.version, zip_sha256: m.zip_sha256.clone(), skipped: m.skipped.clone() },
+                    ReceiptMod {
+                        version: m.version,
+                        zip_sha256: m.zip_sha256.clone(),
+                        skipped: m.skipped.clone(),
+                        generated: m.generated_sha.clone(),
+                    },
                 );
                 let placing: Vec<&package::Resource> = m.resources.iter().filter(|r| !m.skipped.contains(&r.path)).collect();
                 let prefix = format!("{MODS_DIR}/{}/", m.id);
@@ -377,7 +393,7 @@ impl Deployment {
                     .previous
                     .as_ref()
                     .and_then(|r| r.mods.get(&m.id))
-                    .is_some_and(|r| r.zip_sha256 == m.zip_sha256 && r.skipped == m.skipped)
+                    .is_some_and(|r| r.zip_sha256 == m.zip_sha256 && r.skipped == m.skipped && r.generated == m.generated_sha)
                     && previous_mod.iter().all(|(rel, _)| rel_path(game, rel).is_file())
                     && previous_placed.len() == placing.len()
                     && previous_placed.iter().all(|rel| rel_path(game, rel).is_file() && previous_files.contains_key(*rel));
@@ -746,7 +762,33 @@ fn extract_mod(m: &DeployMod, stage: &Path) -> Result<Vec<(String, String)>, Str
         };
         files.push((rel, sha));
     }
+    for (inside, bytes) in &m.generated {
+        let rel = format!("{MODS_DIR}/{}/{inside}", m.id);
+        let target = rel_path(stage, &rel);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Can't create {}: {e}", parent.display()))?;
+        }
+        let sha = copy_hashed(&mut bytes.as_slice(), &target).map_err(|e| format!("Can't write {rel}: {e}"))?;
+        files.retain(|(r, _)| !r.eq_ignore_ascii_case(&rel));
+        files.push((rel, sha));
+    }
     Ok(files)
+}
+
+/// The SHA-256 that stands for a mod's generated files.
+pub fn generated_sha(files: &[(String, Vec<u8>)]) -> String {
+    use sha2::{Digest, Sha256};
+    if files.is_empty() {
+        return String::new();
+    }
+    let mut hash = Sha256::new();
+    for (path, bytes) in files {
+        hash.update(path.as_bytes());
+        hash.update([0]);
+        hash.update((bytes.len() as u64).to_le_bytes());
+        hash.update(bytes);
+    }
+    format!("{:x}", hash.finalize())
 }
 
 #[cfg(test)]
@@ -798,6 +840,8 @@ mod tests {
         DeployMod {
             resources: Vec::new(),
             skipped: BTreeSet::new(),
+            generated: Vec::new(),
+            generated_sha: String::new(),
             id: id.into(),
             version: Version::parse(version).unwrap(),
             zip_sha256: package::sha256_file(&zip).unwrap(),
@@ -963,8 +1007,39 @@ mod tests {
             zip_sha256: info.sha256,
             resources: info.manifest.resources,
             skipped: BTreeSet::new(),
+            generated: Vec::new(),
+            generated_sha: String::new(),
             zip,
         }
+    }
+
+    #[test]
+    fn places_a_generated_file_and_replaces_it_when_it_changes() {
+        let f = fixture("deploy-generated");
+        let dir = game(&f.root, "game");
+        let with = |bytes: &[u8]| {
+            let mut m = resource_mod(&f.root, "population-palette", &[]);
+            m.generated = vec![("merged/P.PRJ".to_string(), bytes.to_vec())];
+            m.generated_sha = generated_sha(&m.generated);
+            m.resources.push(package::Resource { path: "SYSTEMS/P.PRJ".into(), src: "merged/P.PRJ".into() });
+            m
+        };
+        let mods = vec![with(b"one")];
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, &mods)), None)]).unwrap().remove(0).unwrap();
+        assert_eq!(fs::read(dir.join("SYSTEMS/P.PRJ")).unwrap(), b"one");
+        assert_eq!(fs::read(dir.join("mods/population-palette/merged/P.PRJ")).unwrap(), b"one");
+        assert!(plan(&dir, Some((&f.payload, &mods)), Some(receipt.clone())).is_satisfied());
+
+        let mods = vec![with(b"two")];
+        assert!(!plan(&dir, Some((&f.payload, &mods)), Some(receipt.clone())).is_satisfied());
+        let receipt = run(&f, &[plan(&dir, Some((&f.payload, &mods)), Some(receipt))]).unwrap().remove(0).unwrap();
+        assert_eq!(fs::read(dir.join("SYSTEMS/P.PRJ")).unwrap(), b"two");
+
+        // No more changes: the file goes and the game uses its own again.
+        let mods = vec![resource_mod(&f.root, "population-palette", &[])];
+        run(&f, &[plan(&dir, Some((&f.payload, &mods)), Some(receipt))]).unwrap();
+        assert!(!dir.join("SYSTEMS").exists());
+        assert!(!dir.join("mods/population-palette/merged").exists());
     }
 
     #[test]

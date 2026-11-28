@@ -753,8 +753,22 @@ function App() {
             Characters
           </button>
         </nav>
+        <button
+          className="start-game"
+          disabled={!library?.targets.some((t) => t.enabled) || library?.deploy.state === "working"}
+          title="Starts the game. The Mod Manager stays open."
+          onClick={() =>
+            invoke("launch_game").catch((e) => setOutcome({ ok: false, title: "The game didn't start", details: [String(e)] }))
+          }
+        >
+          Start the game
+        </button>
         {tab === "mods" ? (
-          <button disabled={busy || !library.libraryDir} onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}>
+          <button
+            disabled={busy || !library.libraryDir}
+            title="Mod ZIPs, or a CHARACTERPALETTEDATA.PRJ you edited: its colour changes become a mod of their own. You can also drop them on this window."
+            onClick={() => runImport(() => invoke<Outcome>("pick_and_import"))}
+          >
             {busy ? "Adding…" : "Add mod ZIPs…"}
           </button>
         ) : (
@@ -852,7 +866,10 @@ function App() {
         <p className="empty">No mods in the library yet.</p>
       ) : (
         <ul className="mods">
-          {library.mods.map((m) => (
+          {/* active mods (enabled, or brought in as a dependency) first; the order within each group is unchanged */}
+          {[...library.mods]
+            .sort((a, b) => Number(b.enabled || b.selected !== null) - Number(a.enabled || a.selected !== null))
+            .map((m) => (
             <ModRow key={m.id} mod={m} onOutcome={showOutcome} />
           ))}
         </ul>
