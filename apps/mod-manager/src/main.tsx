@@ -866,7 +866,10 @@ function App() {
         <p className="empty">No mods in the library yet.</p>
       ) : (
         <ul className="mods">
-          {library.mods.map((m) => (
+          {/* active mods (enabled, or brought in as a dependency) first; the order within each group is unchanged */}
+          {[...library.mods]
+            .sort((a, b) => Number(b.enabled || b.selected !== null) - Number(a.enabled || a.selected !== null))
+            .map((m) => (
             <ModRow key={m.id} mod={m} onOutcome={showOutcome} />
           ))}
         </ul>
